@@ -1,0 +1,9 @@
+{
+    "camera_id": 0,
+    "sensitivity_x": 9.0,
+    "sensitivity_y": 9.0,
+    "smoothing": 0.18,
+    "tracking_toggle_key": "f12",
+    "acceleration": 1.5,
+    "motion_threshold": 0.1
+}
