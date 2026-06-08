@@ -83,9 +83,17 @@ class FaceTracker(threading.Thread):
 
     def run(self):
         self.cap = cv2.VideoCapture(self.config["camera_id"], cv2.CAP_DSHOW)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        self.cap.set(cv2.CAP_PROP_FPS, 60) # 최신 웹캠의 경우 부드러운 60FPS 트래킹 유도
+        
+        # MJPG 압축 포맷 설정 (USB 대역폭 확보 및 로지텍 브리오 등 고주사율 잠금 해제)
+        try:
+            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        except Exception as e:
+            print(f"카메라 FOURCC 설정 중 예외 발생 (무시됨): {e}")
+
+        # 로지텍 브리오 90FPS 해제용 720p 타겟 설정
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        self.cap.set(cv2.CAP_PROP_FPS, 90)
 
         # 초기 설정값 기반 노출 모드 적용
         lock_fps = self.config.get("lock_fps_low_light", False)
@@ -111,6 +119,11 @@ class FaceTracker(threading.Thread):
             if not ret:
                 time.sleep(0.01)
                 continue
+                
+            # 연산량 감소 및 기존 트래킹 알고리즘 호환을 위해 프레임을 640x480으로 즉시 다운샘플링
+            h_orig, w_orig, _ = frame.shape
+            if w_orig != 640 or h_orig != 480:
+                frame = cv2.resize(frame, (640, 480))
                 
             self.frame_counter += 1
             fps_counter += 1
