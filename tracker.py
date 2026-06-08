@@ -63,11 +63,40 @@ class FaceTracker(threading.Thread):
     def update_deadzone(self, deadzone):
         self.filter.update_deadzone(deadzone)
 
+    def set_auto_exposure(self, auto):
+        if self.cap and self.cap.isOpened():
+            try:
+                if auto:
+                    self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3) # 3: Auto
+                else:
+                    self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1) # 1: Manual
+                    self.cap.set(cv2.CAP_PROP_EXPOSURE, -5.0)   # 저조도 FPS 고정용 노출값 (-5.0 = 1/32초)
+            except Exception as e:
+                print(f"노출 제어 설정 중 에러: {e}")
+
+    def open_camera_settings(self):
+        if self.cap and self.cap.isOpened():
+            try:
+                self.cap.set(cv2.CAP_PROP_SETTINGS, 1) # DirectShow 드라이버 설정 창 호출
+            except Exception as e:
+                print(f"카메라 설정 창 호출 중 에러: {e}")
+
     def run(self):
         self.cap = cv2.VideoCapture(self.config["camera_id"], cv2.CAP_DSHOW)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         self.cap.set(cv2.CAP_PROP_FPS, 60) # 최신 웹캠의 경우 부드러운 60FPS 트래킹 유도
+
+        # 초기 설정값 기반 노출 모드 적용
+        lock_fps = self.config.get("lock_fps_low_light", False)
+        try:
+            if lock_fps:
+                self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1) # Manual
+                self.cap.set(cv2.CAP_PROP_EXPOSURE, -5.0)   # 저조도 FPS 고정용 노출값
+            else:
+                self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3) # Auto
+        except Exception as e:
+            print(f"초기 노출 설정 중 에러: {e}")
 
         fps_start_time = time.time()
         fps_counter = 0

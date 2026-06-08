@@ -143,6 +143,29 @@ class PyViacamGUI:
         self.smooth_scale.set(self.config["smoothing"])
         self.smooth_scale.pack(fill="x", padx=20, pady=(0, 20))
 
+        # 카메라 상세 제어 프레임 (카메라 설정 & 자동 노출 토글)
+        self.cam_ctrl_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
+        self.cam_ctrl_frame.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # 1. 자동 노출 끄기 (FPS 고정) 체크박스
+        self.auto_exposure_var = tk.BooleanVar(value=self.config.get("lock_fps_low_light", False))
+        self.auto_exp_chk = tk.Checkbutton(
+            self.cam_ctrl_frame, text="저조도 FPS 드롭 방지 (수동 노출 고정)", 
+            variable=self.auto_exposure_var, command=self.on_auto_exposure_toggle,
+            bg=self.card_color, fg=self.text_color, selectcolor="#1E293B",
+            activebackground=self.card_color, activeforeground=self.text_color,
+            font=("Segoe UI", 9), bd=0, highlightthickness=0
+        )
+        self.auto_exp_chk.pack(anchor="w", pady=(0, 8))
+        
+        # 2. 카메라 설정 다이얼로그 호출 버튼
+        self.cam_settings_btn = tk.Button(
+            self.cam_ctrl_frame, text="📷 카메라 고급 설정 창 열기", font=("Segoe UI", 9, "bold"),
+            bg="#1E293B", fg=self.text_color, activebackground="#334155", activeforeground=self.text_color,
+            bd=0, padx=10, pady=6, relief="flat", cursor="hand2", command=self.open_camera_settings
+        )
+        self.cam_settings_btn.pack(fill="x")
+
         # 활성화 토글 수동 버튼 (동적 단축키 명칭 적용)
         self.toggle_btn = tk.Button(
             self.ctrl_frame, text=f"추적 시작 / 중지 ({self.config['tracking_toggle_key'].upper()})", font=("Inter", 11, "bold"),
@@ -318,6 +341,15 @@ class PyViacamGUI:
             "• 마우스가 떨리면 스무딩 값을 높이거나 감도를 조절해 보세요."
         )
         self.help_lbl.configure(text=help_text)
+
+    def on_auto_exposure_toggle(self):
+        val = self.auto_exposure_var.get()
+        self.config["lock_fps_low_light"] = val
+        config.save_config(self.config)
+        self.tracker.set_auto_exposure(not val)
+
+    def open_camera_settings(self):
+        self.tracker.open_camera_settings()
 
     def on_close(self):
         self.tracker.stop_tracker()
