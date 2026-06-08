@@ -70,7 +70,7 @@ class FaceTracker(threading.Thread):
                     self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3) # 3: Auto
                 else:
                     self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1) # 1: Manual
-                    self.cap.set(cv2.CAP_PROP_EXPOSURE, -5.0)   # 저조도 FPS 고정용 노출값 (-5.0 = 1/32초)
+                    self.cap.set(cv2.CAP_PROP_EXPOSURE, -7.0)   # 90FPS 잠금 해제를 위한 고속 노출 고정 (-7.0 = 1/125초)
             except Exception as e:
                 print(f"노출 제어 설정 중 에러: {e}")
 
@@ -84,23 +84,27 @@ class FaceTracker(threading.Thread):
     def run(self):
         self.cap = cv2.VideoCapture(self.config["camera_id"], cv2.CAP_DSHOW)
         
-        # MJPG 압축 포맷 설정 (USB 대역폭 확보 및 로지텍 브리오 등 고주사율 잠금 해제)
+        # MJPG 포맷 및 고성능 프레임 설정 적용 (호환성 보장을 위한 순서 지정: 해상도 -> 코덱 -> FPS)
         try:
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            self.cap.set(cv2.CAP_PROP_FPS, 90)
+            
+            # 실제 설정된 스펙 출력 (드라이버가 거부했는지 확인용)
+            actual_w = self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+            actual_h = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+            actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
+            print(f"[카메라 실시간 하드웨어 연결 상태] 해상도: {int(actual_w)}x{int(actual_h)} | FPS: {int(actual_fps)}")
         except Exception as e:
-            print(f"카메라 FOURCC 설정 중 예외 발생 (무시됨): {e}")
-
-        # 로지텍 브리오 90FPS 해제용 720p 타겟 설정
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        self.cap.set(cv2.CAP_PROP_FPS, 90)
+            print(f"카메라 해상도/FPS 설정 중 오류 발생: {e}")
 
         # 초기 설정값 기반 노출 모드 적용
         lock_fps = self.config.get("lock_fps_low_light", False)
         try:
             if lock_fps:
                 self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1) # Manual
-                self.cap.set(cv2.CAP_PROP_EXPOSURE, -5.0)   # 저조도 FPS 고정용 노출값
+                self.cap.set(cv2.CAP_PROP_EXPOSURE, -7.0)   # 90FPS 잠금 해제를 위한 고속 노출 고정 (-7.0 = 1/125초)
             else:
                 self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3) # Auto
         except Exception as e:
