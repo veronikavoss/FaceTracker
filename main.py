@@ -9,8 +9,31 @@ import config
 from tracker import FaceTracker
 from gui import PyViacamGUI
 
-# 마우스 및 키보드 컨트롤러 초기화
-mouse = Controller()
+class FractionalMouseController:
+    """
+    마우스 이동 시 정수형 픽셀 변환으로 소실되는 소수점(fractional) 좌표 변화량을
+    누적했다가 1픽셀 이상 도달 시 반영하여, 초미세 머리 움직임도 부드럽고 정확하게 제어합니다.
+    """
+    def __init__(self, mouse_backend):
+        self.mouse = mouse_backend
+        self.accum_x = 0.0
+        self.accum_y = 0.0
+
+    def move(self, dx, dy):
+        self.accum_x += dx
+        self.accum_y += dy
+        
+        move_x = int(self.accum_x)
+        move_y = int(self.accum_y)
+        
+        self.accum_x -= move_x
+        self.accum_y -= move_y
+        
+        if move_x != 0 or move_y != 0:
+            self.mouse.move(move_x, move_y)
+
+# 마우스 및 키보드 컨트롤러 초기화 (소수점 정밀 누적기 결합)
+mouse = FractionalMouseController(Controller())
 
 def main():
     # 1. 설정 로드
@@ -32,7 +55,7 @@ def main():
     def on_move_callback(dx, dy):
         # pynput을 사용해 딜레이 없이 하드웨어 레벨로 마우스 이동 제어
         try:
-            mouse.move(int(dx), int(dy))
+            mouse.move(dx, dy)
         except Exception as e:
             print(f"마우스 제어 에러: {e}")
             

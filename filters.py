@@ -47,11 +47,13 @@ class EMASmoothingFilter:
         self.smooth_x = adaptive_alpha * dx + (1.0 - adaptive_alpha) * self.smooth_x
         self.smooth_y = adaptive_alpha * dy + (1.0 - adaptive_alpha) * self.smooth_y
 
-        # 5. 소프트 데드존(Soft Deadzone) 감쇄 적용 (뚝 끊기는 끊김 현상 제거)
-        # 하드하게 0으로 뚝 자르는 대신, 임계값보다 속도가 작으면 점진적인 감쇄 곡선을 적용해 부드럽게 감속 및 멈춤 처리
-        if speed < self.deadzone:
+        # 5. 하이브리드 데드존(Hybrid Deadzone) 적용
+        # 임계값의 60% 미만인 미세 요동은 완전히 0으로 무력화하여 진동 원천 차단
+        if speed < self.deadzone * 0.6:
+            return 0.0, 0.0
+        # 60% ~ 100% 구간은 부드러운 감쇄 곡선을 적용해 급작스러운 끊김 방지
+        elif speed < self.deadzone:
             if self.deadzone > 0.0:
-                # 2차 곡선형 마찰 감쇄 비율 적용
                 ratio = speed / self.deadzone
                 final_dx = self.smooth_x * (ratio ** 2)
                 final_dy = self.smooth_y * (ratio ** 2)

@@ -19,9 +19,9 @@ class FaceTracker(threading.Thread):
         cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         self.face_cascade = cv2.CascadeClassifier(cascade_path)
         
-        # 2. Optical Flow(Lucas-Kanade) 매개변수 설정
+        # 2. Optical Flow(Lucas-Kanade) 매개변수 설정 (21x21 크기로 확장하여 반응 안정성 및 코너 이탈 억제)
         self.lk_params = dict(
-            winSize=(15, 15),
+            winSize=(21, 21),
             maxLevel=2,
             criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03)
         )
@@ -33,6 +33,7 @@ class FaceTracker(threading.Thread):
         self.prev_gray = None
         self.track_point = None  # 추적 중인 코 끝 특징점
         self.face_rect = None    # 시각화용 얼굴 영역
+        self.face_rect_smooth = None  # 얼굴 바운딩 박스 흔들림 보정용 스무더
         self.frame_counter = 0   # 프레임 수 세는 카운터
         
         self.cap = None
@@ -76,14 +77,15 @@ class FaceTracker(threading.Thread):
                 print(f"노출 제어 설정 중 에러: {e}")
 
     def _detect_face(self, gray, w):
-        # 1280x720 해상도에서도 CPU 부하를 방지하기 위해 4배 다운샘플링하여 빠르게 검출
-        scale = 0.25
+        # 가로 해상도가 320px가 되도록 동적으로 축소 비율 계산 (가벼운 연산량과 높은 검출 정확도 동시 만족)
+        scale = 320.0 / w if w > 320 else 1.0
         h_small = int(gray.shape[0] * scale)
         w_small = int(gray.shape[1] * scale)
         gray_small = cv2.resize(gray, (w_small, h_small))
         
-        min_size = int(w_small * 0.15)
-        faces = self.face_cascade.detectMultiScale(gray_small, scaleFactor=1.2, minNeighbors=5, minSize=(min_size, min_size))
+        min_size = int(w_small * 0.12)
+        # scaleFactor를 1.2에서 1.1로 낮추고, minNeighbors를 5에서 4로 낮추어 얼굴 인식의 감도와 성공률을 획기적으로 개선
+        faces = self.face_cascade.detectMultiScale(gray_small, scaleFactor=1.1, minNeighbors=4, minSize=(min_size, min_size))
         
         if len(faces) > 0:
             x_s, y_s, fw_s, fh_s = max(faces, key=lambda f: f[2] * f[3])
@@ -206,6 +208,7 @@ class FaceTracker(threading.Thread):
                     
                     if face is not None:
                         x, y, fw, fh = face
+                        self.face_rect_smooth = [float(x), float(y), float(fw), float(fh)]
                         self.face_rect = (x, y, fw, fh)
                         
                         # 코가 위치할 것으로 추정되는 얼굴 중심 영역에 ROI 마스크 적용
@@ -242,11 +245,24 @@ class FaceTracker(threading.Thread):
                             face = self._detect_face(gray, w)
                             if face is not None:
                                 x, y, fw, fh = face
-                                self.face_rect = (x, y, fw, fh) # GUI상의 얼굴 박스를 실시간 업데이트
+                                if self.face_rect_smooth is None:
+                                    self.face_rect_smooth = [float(x), float(y), float(fw), float(fh)]
+                                else:
+                                    # 85% 이전 값 유지, 15% 새 값 반영하여 바운딩 박스 요동 방지 (EMA)
+                                    self.face_rect_smooth[0] = 0.85 * self.face_rect_smooth[0] + 0.15 * x
+                                    self.face_rect_smooth[1] = 0.85 * self.face_rect_smooth[1] + 0.15 * y
+                                    self.face_rect_smooth[2] = 0.85 * self.face_rect_smooth[2] + 0.15 * fw
+                                    self.face_rect_smooth[3] = 0.85 * self.face_rect_smooth[3] + 0.15 * fh
                                 
-                                cx = x + fw // 2
-                                cy = y + int(fh * 0.55) # 추정된 코 중심
-                                r = int(min(fw, fh) * 0.12) # 코 반경
+                                x_sm = int(self.face_rect_smooth[0])
+                                y_sm = int(self.face_rect_smooth[1])
+                                fw_sm = int(self.face_rect_smooth[2])
+                                fh_sm = int(self.face_rect_smooth[3])
+                                self.face_rect = (x_sm, y_sm, fw_sm, fh_sm)
+                                
+                                cx = x_sm + fw_sm // 2
+                                cy = y_sm + int(fh_sm * 0.55) # 추정된 코 중심
+                                r = int(min(fw_sm, fh_sm) * 0.12) # 코 반경
                                 
                                 tx = next_point[0][0][0]
                                 ty = next_point[0][0][1]
