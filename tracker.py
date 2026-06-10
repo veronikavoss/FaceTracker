@@ -7,6 +7,7 @@ from filters import EMASmoothingFilter
 class FaceTracker(threading.Thread):
     def __init__(self, config, on_frame_callback=None, on_move_callback=None):
         super().__init__()
+        self.daemon = True # 메인 스레드 종료 시 서브 스레드가 즉시 자동 종료되도록 설정
         self.config = config
         self.on_frame_callback = on_frame_callback  # GUI 프레임 전달 콜백
         self.on_move_callback = on_move_callback    # 마우스 이동 전달 콜백
@@ -43,8 +44,8 @@ class FaceTracker(threading.Thread):
     def stop_tracker(self):
         self.running = False
         self.tracking_enabled = False
-        if self.cap and self.cap.isOpened():
-            self.cap.release()
+        # 메인 스레드에서 cap.release()를 직접 호출하면 OpenCV 멀티스레드 데드락이 발생할 수 있습니다.
+        # 루프 탈출 후 서브 스레드 내부에서 스스로 해제하도록 일임하고, 데몬 설정을 통해 안전한 탈출을 보장합니다.
 
     def set_tracking(self, enabled):
         self.tracking_enabled = enabled
