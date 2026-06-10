@@ -115,6 +115,8 @@ class FaceTracker(threading.Thread):
         
         def apply_settings(cap, target_fps):
             try:
+                # 버퍼 크기를 1로 제한하여 프레임 지연 및 큐 누적 방지 (실시간성 확보 및 MSMF 오버플로우 크래시 예방)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 r1 = cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
                 r2 = cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
                 r3 = cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -163,8 +165,8 @@ class FaceTracker(threading.Thread):
             t_start = time.time()
             ret, frame = self.cap.read()
             t_read = time.time() - t_start
-            if not ret:
-                time.sleep(0.01)
+            if not ret or frame is None:
+                time.sleep(0.005)
                 continue
                 
             # 연산 속도 향상을 위해 해상도는 1280x720 네이티브로 직접 처리합니다.
