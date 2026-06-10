@@ -14,6 +14,8 @@ DEFAULT_CONFIG = {
     "lock_fps_low_light": False,  # 저조도 FPS 드롭 방지 (자동 노출 비활성화)
     "target_fps": 90,             # 카메라 타겟 FPS 설정 (60 또는 90 등 브리오 사양 지원)
     "camera_backend": "DSHOW",    # 카메라 백엔드 API (DSHOW, MSMF, AUTO 중 선택)
+    "camera_width": 640,          # 카메라 해상도 가로 (CPU 절약을 위해 640 권장)
+    "camera_height": 360,         # 카메라 해상도 세로 (16:9 비율 유지)
 }
 
 def load_config():

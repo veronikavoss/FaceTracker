@@ -1,11 +1,14 @@
 {
     "camera_id": 0,
-    "sensitivity_x": 9.0,
-    "sensitivity_y": 9.0,
-    "smoothing": 0.15,
+    "sensitivity_x": 5.0,
+    "sensitivity_y": 5.0,
+    "smoothing": 0.2,
     "tracking_toggle_key": "f12",
-    "acceleration": 1.5,
-    "motion_threshold": 0.1,
+    "acceleration": 1.1,
+    "motion_threshold": 0.14,
     "lock_fps_low_light": false,
-    "target_fps": 60
+    "target_fps": 60,
+    "camera_backend": "MSMF",
+    "camera_width": 640,
+    "camera_height": 360
 }

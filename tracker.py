@@ -114,13 +114,13 @@ class FaceTracker(threading.Thread):
             
         self.cap = cv2.VideoCapture(camera_id, backend)
         
-        def apply_settings(cap, target_fps):
+        def apply_settings(cap, target_fps, target_w, target_h):
             try:
                 # 버퍼 크기를 1로 제한하여 프레임 지연 및 큐 누적 방지 (실시간성 확보 및 MSMF 오버플로우 크래시 예방)
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 r1 = cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-                r2 = cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-                r3 = cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                r2 = cap.set(cv2.CAP_PROP_FRAME_WIDTH, target_w)
+                r3 = cap.set(cv2.CAP_PROP_FRAME_HEIGHT, target_h)
                 r4 = cap.set(cv2.CAP_PROP_FPS, target_fps)
                 
                 w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
@@ -134,7 +134,9 @@ class FaceTracker(threading.Thread):
                 return 0, 0, 0, "ERROR", (False, False, False, False)
 
         target_fps = self.config.get("target_fps", 90)
-        w, h, fps, codec, results = apply_settings(self.cap, target_fps)
+        target_w = self.config.get("camera_width", 640)
+        target_h = self.config.get("camera_height", 360)
+        w, h, fps, codec, results = apply_settings(self.cap, target_fps, target_w, target_h)
         print(f"[카메라 설정 디버그] FOURCC(MJPG) 설정 결과: {results[0]} | 가로: {results[1]} | 세로: {results[2]} | FPS: {results[3]}")
         print(f"[카메라 최종 연결 완료] 해상도: {int(w)}x{int(h)} | FPS: {int(fps)} | 최종 코덱: {codec}")
 
