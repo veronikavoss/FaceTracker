@@ -124,7 +124,7 @@ class PyViacamGUI:
         self.thresh_label.pack(anchor="w", padx=20, pady=(5, 2))
         
         self.thresh_scale = tk.Scale(
-            self.ctrl_frame, from_=0.0, to=5.0, resolution=0.1, orient="horizontal",
+            self.ctrl_frame, from_=0.0, to=5.0, resolution=0.01, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_thresh_change
         )
