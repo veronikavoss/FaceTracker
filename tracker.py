@@ -89,7 +89,8 @@ class FaceTracker(threading.Thread):
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-            self.cap.set(cv2.CAP_PROP_FPS, 90)
+            target_fps = self.config.get("target_fps", 90)
+            self.cap.set(cv2.CAP_PROP_FPS, target_fps)
             
             # 실제 설정된 스펙 출력 (드라이버가 거부했는지 확인용)
             actual_w = self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)

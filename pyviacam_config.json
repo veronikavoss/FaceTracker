@@ -6,5 +6,5 @@
     "tracking_toggle_key": "f12",
     "acceleration": 1.5,
     "motion_threshold": 0.1,
-    "lock_fps_low_light": true
+    "lock_fps_low_light": false
 }
