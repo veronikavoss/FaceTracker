@@ -130,12 +130,19 @@ class FaceTracker(threading.Thread):
         fps_counter = 0
         current_fps = 0
 
+        # FPS 디버그용 누적 변수
+        sum_read_time = 0.0
+        sum_total_time = 0.0
+        debug_cnt = 0
+
         while self.running:
             if not self.cap or not self.cap.isOpened():
                 time.sleep(0.1)
                 continue
                 
+            t_start = time.time()
             ret, frame = self.cap.read()
+            t_read = time.time() - t_start
             if not ret:
                 time.sleep(0.01)
                 continue
@@ -311,6 +318,18 @@ class FaceTracker(threading.Thread):
             # GUI에 프레임 전달 (FPS, 해상도 포함)
             if self.on_frame_callback:
                 self.on_frame_callback(frame, self.tracking_enabled, nose_x, nose_y, current_fps, w, h)
+
+            t_total = time.time() - t_start
+            
+            # 디버그 통계 누적
+            sum_read_time += t_read
+            sum_total_time += t_total
+            debug_cnt += 1
+            if debug_cnt >= 60:
+                print(f"[FPS 디버그] 60프레임 평균 | 캡처 속도(cap.read): {sum_read_time/debug_cnt*1000:.1f}ms | 총 연산 속도: {sum_total_time/debug_cnt*1000:.1f}ms | 실측 FPS: {debug_cnt/sum_total_time:.1f}")
+                sum_read_time = 0.0
+                sum_total_time = 0.0
+                debug_cnt = 0
 
             # 지연 시간(Latency) 최소화를 위해 수면 시간을 15ms에서 2ms로 대폭 단축
             time.sleep(0.002)
