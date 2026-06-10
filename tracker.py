@@ -124,10 +124,7 @@ class FaceTracker(threading.Thread):
                 time.sleep(0.01)
                 continue
                 
-            # 연산량 감소 및 기존 트래킹 알고리즘 호환을 위해 프레임을 640x480으로 즉시 다운샘플링
-            h_orig, w_orig, _ = frame.shape
-            if w_orig != 640 or h_orig != 480:
-                frame = cv2.resize(frame, (640, 480))
+            # 연산 속도 향상을 위해 해상도는 1280x720 네이티브로 직접 처리합니다.
                 
             self.frame_counter += 1
             fps_counter += 1
@@ -165,7 +162,7 @@ class FaceTracker(threading.Thread):
                 # 3-1. 이전 프레임 정보나 추적점이 없다면 새로 얼굴을 인식하여 특징점 지정
                 if self.track_point is None or self.prev_gray is None:
                     # 얼굴 영역 검출
-                    faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(100, 100))
+                    faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(int(w * 0.15), int(w * 0.15)))
                     
                     if len(faces) > 0:
                         # 가장 큰 얼굴 선택
@@ -203,7 +200,7 @@ class FaceTracker(threading.Thread):
                     if status is not None and status[0][0] == 1:
                         # 주기적인 코 끝 고정 보정 (20프레임마다 작동, 약 0.33초 주기)
                         if self.frame_counter % 20 == 0:
-                            faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(100, 100))
+                            faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(int(w * 0.15), int(w * 0.15)))
                             if len(faces) > 0:
                                 x, y, fw, fh = max(faces, key=lambda f: f[2] * f[3])
                                 self.face_rect = (x, y, fw, fh) # GUI상의 얼굴 박스를 실시간 업데이트
@@ -274,7 +271,7 @@ class FaceTracker(threading.Thread):
                         self.reset_tracking_state()
             else:
                 # 활성화되지 않았을 때는 그냥 얼굴 영역만 시각화용으로 가볍게 찾아줌
-                faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5, minSize=(100, 100))
+                faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5, minSize=(int(w * 0.15), int(w * 0.15)))
                 if len(faces) > 0:
                     x, y, fw, fh = max(faces, key=lambda f: f[2] * f[3])
                     self.face_rect = (x, y, fw, fh)

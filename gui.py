@@ -60,12 +60,12 @@ class PyViacamGUI:
         self.info_label = tk.Label(self.cam_header, text="FPS: -- | --x--", font=("Inter", 10, "bold"), fg=self.muted_color, bg=self.card_color)
         self.info_label.pack(side="right")
         
-        # 비디오 표시 캔버스 (640x480 카메라 해상도 맞춤)
-        self.canvas = tk.Canvas(self.cam_frame, width=500, height=375, bg="#020617", bd=0, highlightthickness=0)
+        # 비디오 표시 캔버스 (1280x720 카메라 해상도 맞춤 16:9 비율)
+        self.canvas = tk.Canvas(self.cam_frame, width=640, height=360, bg="#020617", bd=0, highlightthickness=0)
         self.canvas.pack(padx=15, pady=5, fill="both", expand=True)
         
         # 초기 카메라 대기 상태 텍스트
-        self.canvas.create_text(250, 187, text="카메라 연결 대기 중...", fill=self.muted_color, font=("Segoe UI", 12))
+        self.canvas.create_text(320, 180, text="카메라 연결 대기 중...", fill=self.muted_color, font=("Segoe UI", 12))
 
     def _init_control_panel(self):
         # 우측 컨트롤 프레임
@@ -215,8 +215,8 @@ class PyViacamGUI:
         # FPS & 해상도 정보 라벨 갱신
         self.info_label.configure(text=f"FPS: {fps} | {w}x{h}")
 
-        # OpenCV 이미지를 PIL 이미지로 변환 후 리사이즈
-        cv_frame = cv2.resize(cv_frame, (500, 375))
+        # OpenCV 이미지를 PIL 이미지로 변환 후 16:9 비율 리사이즈 (640x360)
+        cv_frame = cv2.resize(cv_frame, (640, 360))
         rgb_image = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(rgb_image)
         
