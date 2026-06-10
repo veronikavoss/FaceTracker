@@ -1,3 +1,7 @@
+import os
+# MSMF 카메라 초기화 속도 대폭 단축을 위한 하드웨어 트랜스폼 비활성화
+os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
+
 import tkinter as tk
 from pynput import keyboard
 from pynput.mouse import Controller
