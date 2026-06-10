@@ -97,25 +97,43 @@ class FaceTracker(threading.Thread):
                 print(f"카메라 설정 창 호출 중 에러: {e}")
 
     def run(self):
-        self.cap = cv2.VideoCapture(self.config["camera_id"], cv2.CAP_DSHOW)
+        camera_id = self.config["camera_id"]
         
-        # MJPG 포맷 및 고성능 프레임 설정 적용 (호환성 보장을 위한 순서 지정: 해상도 -> 코덱 -> FPS)
-        try:
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-            target_fps = self.config.get("target_fps", 90)
-            self.cap.set(cv2.CAP_PROP_FPS, target_fps)
+        # 설정 파일로부터 카메라 백엔드 로드 (DSHOW, MSMF, AUTO)
+        backend_str = self.config.get("camera_backend", "DSHOW").upper()
+        if backend_str == "MSMF":
+            backend = cv2.CAP_MSMF
+            print("[카메라 백엔드] MSMF(Media Foundation) 모드로 가동합니다.")
+        elif backend_str == "AUTO":
+            backend = cv2.CAP_ANY
+            print("[카메라 백엔드] AUTO(기본 자동 선택) 모드로 가동합니다.")
+        else:
+            backend = cv2.CAP_DSHOW
+            print("[카메라 백엔드] DSHOW(DirectShow) 모드로 가동합니다.")
             
-            # 실제 설정된 스펙 출력 (드라이버가 거부했는지 확인용)
-            actual_w = self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-            actual_h = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
-            fourcc_val = int(self.cap.get(cv2.CAP_PROP_FOURCC))
-            fourcc_str = "".join([chr((fourcc_val >> 8 * i) & 0xFF) for i in range(4)])
-            print(f"[카메라 실시간 하드웨어 연결 상태] 해상도: {int(actual_w)}x{int(actual_h)} | FPS: {int(actual_fps)} | 코덱: {fourcc_str}")
-        except Exception as e:
-            print(f"카메라 해상도/FPS 설정 중 오류 발생: {e}")
+        self.cap = cv2.VideoCapture(camera_id, backend)
+        
+        def apply_settings(cap, target_fps):
+            try:
+                r1 = cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+                r2 = cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                r3 = cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                r4 = cap.set(cv2.CAP_PROP_FPS, target_fps)
+                
+                w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+                h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                fourcc_val = int(cap.get(cv2.CAP_PROP_FOURCC))
+                fourcc_str = "".join([chr((fourcc_val >> 8 * i) & 0xFF) for i in range(4)]) if fourcc_val > 0 else "NONE"
+                return w, h, fps, fourcc_str, (r1, r2, r3, r4)
+            except Exception as e:
+                print(f"설정 적용 중 에러: {e}")
+                return 0, 0, 0, "ERROR", (False, False, False, False)
+
+        target_fps = self.config.get("target_fps", 90)
+        w, h, fps, codec, results = apply_settings(self.cap, target_fps)
+        print(f"[카메라 설정 디버그] FOURCC(MJPG) 설정 결과: {results[0]} | 가로: {results[1]} | 세로: {results[2]} | FPS: {results[3]}")
+        print(f"[카메라 최종 연결 완료] 해상도: {int(w)}x{int(h)} | FPS: {int(fps)} | 최종 코덱: {codec}")
 
         # 초기 설정값 기반 노출 모드 적용
         lock_fps = self.config.get("lock_fps_low_light", False)

@@ -13,6 +13,7 @@ DEFAULT_CONFIG = {
     "tracking_toggle_key": "f12",  # 활성/비활성 전환 키
     "lock_fps_low_light": False,  # 저조도 FPS 드롭 방지 (자동 노출 비활성화)
     "target_fps": 90,             # 카메라 타겟 FPS 설정 (60 또는 90 등 브리오 사양 지원)
+    "camera_backend": "DSHOW",    # 카메라 백엔드 API (DSHOW, MSMF, AUTO 중 선택)
 }
 
 def load_config():
