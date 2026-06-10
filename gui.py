@@ -215,8 +215,15 @@ class PyViacamGUI:
         # FPS & 해상도 정보 라벨 갱신
         self.info_label.configure(text=f"FPS: {fps} | {w}x{h}")
 
-        # OpenCV 이미지를 PIL 이미지로 변환 후 16:9 비율 리사이즈 (640x360)
-        cv_frame = cv2.resize(cv_frame, (640, 360))
+        # 640 가로 길이를 고정한 채, 종횡비(w, h)에 맞게 세로 길이를 계산하여 늘림 방지
+        display_w = 640
+        display_h = int(640 * (h / w)) if w > 0 else 360
+        
+        # 캔버스 크기 동적 조절
+        if int(self.canvas.cget("width")) != display_w or int(self.canvas.cget("height")) != display_h:
+            self.canvas.configure(width=display_w, height=display_h)
+
+        cv_frame = cv2.resize(cv_frame, (display_w, display_h))
         rgb_image = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(rgb_image)
         

@@ -10,5 +10,5 @@
     "target_fps": 60,
     "camera_backend": "MSMF",
     "camera_width": 640,
-    "camera_height": 360
+    "camera_height": 480
 }
