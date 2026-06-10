@@ -111,7 +111,9 @@ class FaceTracker(threading.Thread):
             actual_w = self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
             actual_h = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
             actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
-            print(f"[카메라 실시간 하드웨어 연결 상태] 해상도: {int(actual_w)}x{int(actual_h)} | FPS: {int(actual_fps)}")
+            fourcc_val = int(self.cap.get(cv2.CAP_PROP_FOURCC))
+            fourcc_str = "".join([chr((fourcc_val >> 8 * i) & 0xFF) for i in range(4)])
+            print(f"[카메라 실시간 하드웨어 연결 상태] 해상도: {int(actual_w)}x{int(actual_h)} | FPS: {int(actual_fps)} | 코덱: {fourcc_str}")
         except Exception as e:
             print(f"카메라 해상도/FPS 설정 중 오류 발생: {e}")
 
