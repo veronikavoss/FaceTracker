@@ -153,10 +153,39 @@ class FaceTracker(threading.Thread):
         except Exception as e:
             print(f"초기 노출 설정 중 에러: {e}")
 
+        current_camera_id = camera_id
         fps_start_time = time.time()
         fps_counter = 0
         current_fps = 0
         while self.running:
+            # 실시간 카메라 ID 변경 감지 시 동적 재연결
+            if self.config.get("camera_id", 0) != current_camera_id:
+                new_camera_id = self.config.get("camera_id", 0)
+                print(f"[카메라 변경 감지] Index {current_camera_id} -> {new_camera_id}")
+                self.reset_tracking_state()
+                if self.cap and self.cap.isOpened():
+                    self.cap.release()
+                
+                current_camera_id = new_camera_id
+                self.cap = cv2.VideoCapture(current_camera_id, backend)
+                w, h, fps, codec, results = apply_settings(self.cap, target_fps, target_w, target_h)
+                
+                # 노출 모드 재적용
+                lock_fps = self.config.get("lock_fps_low_light", False)
+                try:
+                    if lock_fps:
+                        self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
+                        self.cap.set(cv2.CAP_PROP_EXPOSURE, -7.0)
+                    else:
+                        self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3)
+                except Exception as e:
+                    print(f"노출 설정 재적용 중 에러: {e}")
+                
+                fps_start_time = time.time()
+                fps_counter = 0
+                current_fps = 0
+                continue
+
             if not self.cap or not self.cap.isOpened():
                 time.sleep(0.1)
                 continue

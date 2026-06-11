@@ -147,6 +147,53 @@ class PyViacamGUI:
         self.cam_ctrl_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
         self.cam_ctrl_frame.pack(fill="x", padx=20, pady=(0, 15))
         
+        # 0. 카메라 선택 드롭다운 프레임
+        self.cam_select_frame = tk.Frame(self.cam_ctrl_frame, bg=self.card_color)
+        self.cam_select_frame.pack(fill="x", pady=(0, 10))
+        
+        self.cam_select_label = tk.Label(
+            self.cam_select_frame, text="카메라 선택:", font=("Segoe UI", 9, "bold"),
+            fg=self.text_color, bg=self.card_color
+        )
+        self.cam_select_label.pack(side="left", padx=(0, 5))
+        
+        # 카메라 장치 스캔
+        self.camera_list = self.scan_cameras()
+        combo_values = [f"카메라 {idx}" for idx in self.camera_list]
+        
+        # 드롭다운 생성
+        self.cam_combo = ttk.Combobox(
+            self.cam_select_frame, values=combo_values, state="readonly", width=12
+        )
+        
+        # 스타일 적용 (미드나이트 다크 느낌의 콤보박스 디자인)
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure(
+            "TCombobox", 
+            fieldbackground="#1E293B", 
+            background="#334155", 
+            foreground="#F8FAFC", 
+            arrowcolor="#F8FAFC",
+            bordercolor="#334155"
+        )
+        style.map(
+            "TCombobox", 
+            fieldbackground=[('readonly', '#1E293B')],
+            foreground=[('readonly', '#F8FAFC')]
+        )
+        
+        # 현재 선택된 카메라로 초기값 설정
+        current_id = self.config.get("camera_id", 0)
+        try:
+            current_index = self.camera_list.index(current_id)
+            self.cam_combo.current(current_index)
+        except ValueError:
+            self.cam_combo.set(f"카메라 {current_id}")
+            
+        self.cam_combo.pack(side="left", fill="x", expand=True)
+        self.cam_combo.bind("<<ComboboxSelected>>", self.on_camera_select)
+        
         # 1. 자동 노출 끄기 (FPS 고정) 체크박스
         self.auto_exposure_var = tk.BooleanVar(value=self.config.get("lock_fps_low_light", False))
         self.auto_exp_chk = tk.Checkbutton(
@@ -357,6 +404,43 @@ class PyViacamGUI:
 
     def open_camera_settings(self):
         self.tracker.open_camera_settings()
+
+    def scan_cameras(self):
+        """
+        사용 가능한 카메라 장치 목록을 스캔하여 인덱스 목록을 반환합니다.
+        """
+        current_id = self.config.get("camera_id", 0)
+        available = [current_id]
+        
+        # 설정 파일로부터 카메라 백엔드 로드 (DSHOW, MSMF, AUTO)
+        backend_str = self.config.get("camera_backend", "DSHOW").upper()
+        if backend_str == "MSMF":
+            backend = cv2.CAP_MSMF
+        elif backend_str == "AUTO":
+            backend = cv2.CAP_ANY
+        else:
+            backend = cv2.CAP_DSHOW
+            
+        for i in range(5):
+            if i == current_id:
+                continue
+            cap = cv2.VideoCapture(i, backend)
+            if cap.isOpened():
+                available.append(i)
+                cap.release()
+                
+        return sorted(list(set(available)))
+
+    def on_camera_select(self, event):
+        selected_str = self.cam_combo.get()
+        try:
+            selected_idx = int(selected_str.split(" ")[1])
+            if self.config["camera_id"] != selected_idx:
+                self.config["camera_id"] = selected_idx
+                config.save_config(self.config)
+                print(f"[GUI] 카메라가 인덱스 {selected_idx}로 변경되었습니다.")
+        except Exception as e:
+            print(f"카메라 선택 이벤트 처리 중 오류: {e}")
 
     def on_close(self):
         self.tracker.stop_tracker()
