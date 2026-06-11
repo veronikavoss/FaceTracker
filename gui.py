@@ -12,7 +12,7 @@ class PyViacamGUI:
         
         # 윈도우 타이틀 및 크기 설정
         self.root.title("PyViacam Lite - Head Tracking Mouse")
-        self.root.geometry("900x560")
+        self.root.geometry("940x600")
         self.root.resizable(False, False)
         
         # 스타일 테마 정의 (Modern Premium Dark Mode)
@@ -83,65 +83,100 @@ class PyViacamGUI:
         separator = tk.Frame(self.ctrl_frame, height=1, bg="#334155")
         separator.pack(fill="x", padx=20, pady=(0, 20))
         
-        # 감도(Sensitivity X) 조절 영역
-        self.sens_x_label = tk.Label(self.ctrl_frame, text=f"X축 민감도: {self.config['sensitivity_x']:.2f}", font=("Inter", 10), fg=self.text_color, bg=self.card_color)
-        self.sens_x_label.pack(anchor="w", padx=20, pady=(5, 2))
+        # 감도(Sensitivity X/Y) 조절 영역 (가로 병렬 배치)
+        self.sens_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
+        self.sens_frame.pack(fill="x", padx=20, pady=(5, 10))
+        self.sens_frame.columnconfigure(0, weight=1)
+        self.sens_frame.columnconfigure(1, weight=1)
         
+        # X축 민감도
+        self.sens_x_container = tk.Frame(self.sens_frame, bg=self.card_color)
+        self.sens_x_container.grid(row=0, column=0, padx=(0, 10), sticky="ew")
+        self.sens_x_label = tk.Label(self.sens_x_container, text=f"X축 민감도: {self.config['sensitivity_x']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.sens_x_label.pack(anchor="w")
         self.sens_x_scale = tk.Scale(
-            self.ctrl_frame, from_=0.1, to=20.0, resolution=0.1, orient="horizontal",
+            self.sens_x_container, from_=0.0, to=10.0, resolution=0.1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_sens_x_change
         )
         self.sens_x_scale.set(self.config["sensitivity_x"])
-        self.sens_x_scale.pack(fill="x", padx=20, pady=(0, 15))
+        self.sens_x_scale.pack(fill="x", pady=(2, 0))
         
-        # 감도(Sensitivity Y) 조절 영역
-        self.sens_y_label = tk.Label(self.ctrl_frame, text=f"Y축 민감도: {self.config['sensitivity_y']:.2f}", font=("Inter", 10), fg=self.text_color, bg=self.card_color)
-        self.sens_y_label.pack(anchor="w", padx=20, pady=(5, 2))
-        
+        # Y축 민감도
+        self.sens_y_container = tk.Frame(self.sens_frame, bg=self.card_color)
+        self.sens_y_container.grid(row=0, column=1, padx=(10, 0), sticky="ew")
+        self.sens_y_label = tk.Label(self.sens_y_container, text=f"Y축 민감도: {self.config['sensitivity_y']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.sens_y_label.pack(anchor="w")
         self.sens_y_scale = tk.Scale(
-            self.ctrl_frame, from_=0.1, to=20.0, resolution=0.1, orient="horizontal",
+            self.sens_y_container, from_=0.0, to=10.0, resolution=0.1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_sens_y_change
         )
         self.sens_y_scale.set(self.config["sensitivity_y"])
-        self.sens_y_scale.pack(fill="x", padx=20, pady=(0, 15))
+        self.sens_y_scale.pack(fill="x", pady=(2, 0))
         
-        # 모션 가속도(Acceleration) 조절 영역
-        self.accel_label = tk.Label(self.ctrl_frame, text=f"모션 가속도: {self.config['acceleration']:.2f}", font=("Inter", 10), fg=self.text_color, bg=self.card_color)
-        self.accel_label.pack(anchor="w", padx=20, pady=(5, 2))
+        # 필터 (임계값/스무딩) 조절 영역 (가로 병렬 배치)
+        self.filter_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
+        self.filter_frame.pack(fill="x", padx=20, pady=(0, 10))
+        self.filter_frame.columnconfigure(0, weight=1)
+        self.filter_frame.columnconfigure(1, weight=1)
         
-        self.accel_scale = tk.Scale(
-            self.ctrl_frame, from_=1.0, to=5.0, resolution=0.1, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_accel_change
-        )
-        self.accel_scale.set(self.config["acceleration"])
-        self.accel_scale.pack(fill="x", padx=20, pady=(0, 15))
-        
-        # 움직임 임계값(Motion Threshold) 조절 영역
-        self.thresh_label = tk.Label(self.ctrl_frame, text=f"움직임 임계값: {self.config['motion_threshold']:.2f}", font=("Inter", 10), fg=self.text_color, bg=self.card_color)
-        self.thresh_label.pack(anchor="w", padx=20, pady=(5, 2))
-        
+        # 움직임 임계값
+        self.thresh_container = tk.Frame(self.filter_frame, bg=self.card_color)
+        self.thresh_container.grid(row=0, column=0, padx=(0, 10), sticky="ew")
+        self.thresh_label = tk.Label(self.thresh_container, text=f"움직임 임계값: {self.config['motion_threshold']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.thresh_label.pack(anchor="w")
         self.thresh_scale = tk.Scale(
-            self.ctrl_frame, from_=0.0, to=5.0, resolution=0.01, orient="horizontal",
+            self.thresh_container, from_=0.0, to=0.28, resolution=0.01, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_thresh_change
         )
         self.thresh_scale.set(self.config["motion_threshold"])
-        self.thresh_scale.pack(fill="x", padx=20, pady=(0, 15))
+        self.thresh_scale.pack(fill="x", pady=(2, 0))
         
-        # 흔들림 방지(Smoothing) 조절 영역
-        self.smooth_label = tk.Label(self.ctrl_frame, text=f"모션 스무딩(부드러움): {self.config['smoothing']:.2f}", font=("Inter", 10), fg=self.text_color, bg=self.card_color)
-        self.smooth_label.pack(anchor="w", padx=20, pady=(5, 2))
-        
+        # 모션 스무딩(부드러움)
+        self.smooth_container = tk.Frame(self.filter_frame, bg=self.card_color)
+        self.smooth_container.grid(row=0, column=1, padx=(10, 0), sticky="ew")
+        self.smooth_label = tk.Label(self.smooth_container, text=f"모션 스무딩(부드러움): {self.config['smoothing']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.smooth_label.pack(anchor="w")
         self.smooth_scale = tk.Scale(
-            self.ctrl_frame, from_=0.01, to=0.5, resolution=0.01, orient="horizontal",
+            self.smooth_container, from_=0.0, to=0.40, resolution=0.01, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_smooth_change
         )
         self.smooth_scale.set(self.config["smoothing"])
-        self.smooth_scale.pack(fill="x", padx=20, pady=(0, 20))
+        self.smooth_scale.pack(fill="x", pady=(2, 0))
+        
+        # 가속도 및 단축키 변경 영역 (가로 병렬 배치)
+        self.extra_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
+        self.extra_frame.pack(fill="x", padx=20, pady=(0, 15))
+        self.extra_frame.columnconfigure(0, weight=1)
+        self.extra_frame.columnconfigure(1, weight=1)
+        
+        # 모션 가속도
+        self.accel_container = tk.Frame(self.extra_frame, bg=self.card_color)
+        self.accel_container.grid(row=0, column=0, padx=(0, 10), sticky="ew")
+        self.accel_label = tk.Label(self.accel_container, text=f"모션 가속도: {self.config['acceleration']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.accel_label.pack(anchor="w")
+        self.accel_scale = tk.Scale(
+            self.accel_container, from_=1.0, to=1.2, resolution=0.01, orient="horizontal",
+            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
+            highlightthickness=0, bd=0, showvalue=False, command=self.on_accel_change
+        )
+        self.accel_scale.set(self.config["acceleration"])
+        self.accel_scale.pack(fill="x", pady=(2, 0))
+        
+        # 토글 단축키 설정
+        self.hotkey_container = tk.Frame(self.extra_frame, bg=self.card_color)
+        self.hotkey_container.grid(row=0, column=1, padx=(10, 0), sticky="ew")
+        self.hotkey_lbl = tk.Label(self.hotkey_container, text=f"토글 단축키: {self.config['tracking_toggle_key'].upper()}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.hotkey_lbl.pack(anchor="w")
+        self.hotkey_btn = tk.Button(
+            self.hotkey_container, text="단축키 변경", font=("Segoe UI", 9, "bold"),
+            bg="#334155", fg=self.text_color, activebackground="#475569", activeforeground=self.text_color,
+            bd=0, padx=10, pady=4, relief="flat", cursor="hand2", command=self.start_hotkey_recording
+        )
+        self.hotkey_btn.pack(fill="x", pady=(2, 0))
 
         # 카메라 상세 제어 프레임 (카메라 설정 & 자동 노출 토글)
         self.cam_ctrl_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
@@ -220,24 +255,6 @@ class PyViacamGUI:
             bd=0, padx=10, pady=10, relief="flat", cursor="hand2", command=self.manual_toggle
         )
         self.toggle_btn.pack(fill="x", padx=20, pady=(10, 15))
-
-        # 단축키 설정 영역 프레임
-        self.hotkey_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
-        self.hotkey_frame.pack(fill="x", padx=20, pady=(0, 20))
-        
-        self.hotkey_lbl = tk.Label(
-            self.hotkey_frame, 
-            text=f"토글 단축키: {self.config['tracking_toggle_key'].upper()}", 
-            font=("Inter", 10), fg=self.text_color, bg=self.card_color
-        )
-        self.hotkey_lbl.pack(side="left", anchor="w")
-        
-        self.hotkey_btn = tk.Button(
-            self.hotkey_frame, text="단축키 변경", font=("Segoe UI", 9, "bold"),
-            bg="#334155", fg=self.text_color, activebackground="#475569", activeforeground=self.text_color,
-            bd=0, padx=10, pady=4, relief="flat", cursor="hand2", command=self.start_hotkey_recording
-        )
-        self.hotkey_btn.pack(side="right")
         
         self.recording_hotkey = False
 
