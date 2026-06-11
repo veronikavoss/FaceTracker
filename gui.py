@@ -12,7 +12,7 @@ class PyViacamGUI:
         
         # 윈도우 타이틀 및 크기 설정
         self.root.title("PyViacam Lite - Head Tracking Mouse")
-        self.root.geometry("940x600")
+        self.root.geometry("1000x600")
         self.root.resizable(False, False)
         
         # 스타일 테마 정의 (Modern Premium Dark Mode)
@@ -92,7 +92,7 @@ class PyViacamGUI:
         # X축 민감도
         self.sens_x_container = tk.Frame(self.sens_frame, bg=self.card_color)
         self.sens_x_container.grid(row=0, column=0, padx=(0, 10), sticky="ew")
-        self.sens_x_label = tk.Label(self.sens_x_container, text=f"X축 민감도: {self.config['sensitivity_x']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.sens_x_label = tk.Label(self.sens_x_container, text=f"민감도 X: {self.config['sensitivity_x']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.sens_x_label.pack(anchor="w")
         self.sens_x_scale = tk.Scale(
             self.sens_x_container, from_=0.0, to=10.0, resolution=0.1, orient="horizontal",
@@ -105,7 +105,7 @@ class PyViacamGUI:
         # Y축 민감도
         self.sens_y_container = tk.Frame(self.sens_frame, bg=self.card_color)
         self.sens_y_container.grid(row=0, column=1, padx=(10, 0), sticky="ew")
-        self.sens_y_label = tk.Label(self.sens_y_container, text=f"Y축 민감도: {self.config['sensitivity_y']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.sens_y_label = tk.Label(self.sens_y_container, text=f"민감도 Y: {self.config['sensitivity_y']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.sens_y_label.pack(anchor="w")
         self.sens_y_scale = tk.Scale(
             self.sens_y_container, from_=0.0, to=10.0, resolution=0.1, orient="horizontal",
@@ -124,7 +124,7 @@ class PyViacamGUI:
         # 움직임 임계값
         self.thresh_container = tk.Frame(self.filter_frame, bg=self.card_color)
         self.thresh_container.grid(row=0, column=0, padx=(0, 10), sticky="ew")
-        self.thresh_label = tk.Label(self.thresh_container, text=f"움직임 임계값: {self.config['motion_threshold']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.thresh_label = tk.Label(self.thresh_container, text=f"임계값: {self.config['motion_threshold']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.thresh_label.pack(anchor="w")
         self.thresh_scale = tk.Scale(
             self.thresh_container, from_=0.0, to=0.28, resolution=0.01, orient="horizontal",
@@ -137,7 +137,7 @@ class PyViacamGUI:
         # 모션 스무딩(부드러움)
         self.smooth_container = tk.Frame(self.filter_frame, bg=self.card_color)
         self.smooth_container.grid(row=0, column=1, padx=(10, 0), sticky="ew")
-        self.smooth_label = tk.Label(self.smooth_container, text=f"모션 스무딩(부드러움): {self.config['smoothing']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.smooth_label = tk.Label(self.smooth_container, text=f"스무딩: {self.config['smoothing']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.smooth_label.pack(anchor="w")
         self.smooth_scale = tk.Scale(
             self.smooth_container, from_=0.0, to=0.40, resolution=0.01, orient="horizontal",
@@ -156,7 +156,7 @@ class PyViacamGUI:
         # 모션 가속도
         self.accel_container = tk.Frame(self.extra_frame, bg=self.card_color)
         self.accel_container.grid(row=0, column=0, padx=(0, 10), sticky="ew")
-        self.accel_label = tk.Label(self.accel_container, text=f"모션 가속도: {self.config['acceleration']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.accel_label = tk.Label(self.accel_container, text=f"가속도: {self.config['acceleration']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.accel_label.pack(anchor="w")
         self.accel_scale = tk.Scale(
             self.accel_container, from_=1.0, to=1.2, resolution=0.01, orient="horizontal",
@@ -169,7 +169,7 @@ class PyViacamGUI:
         # 토글 단축키 설정
         self.hotkey_container = tk.Frame(self.extra_frame, bg=self.card_color)
         self.hotkey_container.grid(row=0, column=1, padx=(10, 0), sticky="ew")
-        self.hotkey_lbl = tk.Label(self.hotkey_container, text=f"토글 단축키: {self.config['tracking_toggle_key'].upper()}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.hotkey_lbl = tk.Label(self.hotkey_container, text=f"단축키: {self.config['tracking_toggle_key'].upper()}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.hotkey_lbl.pack(anchor="w")
         self.hotkey_btn = tk.Button(
             self.hotkey_container, text="단축키 변경", font=("Segoe UI", 9, "bold"),
@@ -319,32 +319,32 @@ class PyViacamGUI:
     def on_sens_x_change(self, val):
         sens = float(val)
         self.config["sensitivity_x"] = sens
-        self.sens_x_label.configure(text=f"X축 민감도: {sens:.2f}")
+        self.sens_x_label.configure(text=f"민감도 X: {sens:.2f}")
         config.save_config(self.config)
 
     def on_sens_y_change(self, val):
         sens = float(val)
         self.config["sensitivity_y"] = sens
-        self.sens_y_label.configure(text=f"Y축 민감도: {sens:.2f}")
+        self.sens_y_label.configure(text=f"민감도 Y: {sens:.2f}")
         config.save_config(self.config)
 
     def on_accel_change(self, val):
         accel = float(val)
         self.config["acceleration"] = accel
-        self.accel_label.configure(text=f"모션 가속도: {accel:.2f}")
+        self.accel_label.configure(text=f"가속도: {accel:.2f}")
         config.save_config(self.config)
 
     def on_thresh_change(self, val):
         thresh = float(val)
         self.config["motion_threshold"] = thresh
-        self.thresh_label.configure(text=f"움직임 임계값: {thresh:.2f}")
+        self.thresh_label.configure(text=f"임계값: {thresh:.2f}")
         self.tracker.update_deadzone(thresh)
         config.save_config(self.config)
 
     def on_smooth_change(self, val):
         smooth = float(val)
         self.config["smoothing"] = smooth
-        self.smooth_label.configure(text=f"모션 스무딩(부드러움): {smooth:.2f}")
+        self.smooth_label.configure(text=f"스무딩: {smooth:.2f}")
         self.tracker.update_filter_alpha(smooth)
         config.save_config(self.config)
 
@@ -390,7 +390,7 @@ class PyViacamGUI:
         config.save_config(self.config)
         
         # UI 라벨 및 도움말 동적 갱신
-        self.hotkey_lbl.configure(text=f"토글 단축키: {final_key.upper()}")
+        self.hotkey_lbl.configure(text=f"단축키: {final_key.upper()}")
         self.status_label.configure(text=f"비활성 상태 ({final_key.upper()}키로 활성화)")
         self.toggle_btn.configure(text=f"추적 시작 / 중지 ({final_key.upper()})")
         self.update_help_text(final_key)

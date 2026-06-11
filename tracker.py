@@ -212,17 +212,18 @@ class FaceTracker(threading.Thread):
             # 연산 속도 향상을 위한 그레이스케일 변환
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             
-            # 저조도(어두운 환경) 극복을 위한 어댑티브 전처리 (CLAHE + Gaussian Blur)
+            # 저조도(어두운 환경) 극복을 위한 어댑티브 전처리 (어두울 때만 대비 증폭)
             mean_brightness = np.mean(gray)
-            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-            gray_enhanced = clahe.apply(gray)
             
-            # 조도가 매우 낮은 경우(60 미만) 노이즈 감쇄 필터링 강화 및 데드존 보정 계수 할당
             if mean_brightness < 60:
+                # 조도가 낮을 때만 대비를 소프트하게 향상 (clipLimit을 1.5로 완화하여 노이즈 증폭 억제)
+                clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
+                gray_enhanced = clahe.apply(gray)
                 gray = cv2.GaussianBlur(gray_enhanced, (5, 5), 0)
-                temp_deadzone_mult = 1.3
+                temp_deadzone_mult = 1.5
             else:
-                gray = cv2.GaussianBlur(gray_enhanced, (3, 3), 0)
+                # 일반 조도에서는 대비 보정을 생략해 센서 노이즈 추가 증폭 차단
+                gray = cv2.GaussianBlur(gray, (3, 3), 0)
                 temp_deadzone_mult = 1.0
             
             dx, dy = 0.0, 0.0

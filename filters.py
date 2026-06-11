@@ -39,9 +39,9 @@ class EMASmoothingFilter:
         speed = (dx**2 + dy**2)**0.5
 
         # 3. 어댑티브 알파(Adaptive Alpha) 계산
-        # 속도가 빠를수록 alpha를 1.0(실시간 카메라 직접 추적, 지연 0)에 가깝게 폭발시키고,
-        # 속도가 느릴(정지/정밀 타겟팅)수록 설정된 smoothing(alpha) 값을 써서 노이즈를 강력 차단
-        adaptive_alpha = self.alpha + (1.0 - self.alpha) * min(1.0, speed / 1.0)
+        # 속도가 매우 빠를 때만 alpha가 1.0에 도달하도록 2차 곡선형 응답 곡선 적용 (속도 임계값 2.5픽셀)
+        # 느리고 섬세한 머리 움직임 시에는 지수 평균 스무딩 강도가 최대로 유지되도록 개선하여 떨림 방지
+        adaptive_alpha = self.alpha + (1.0 - self.alpha) * min(1.0, (speed / 2.5) ** 2)
 
         # 4. 동적 알파를 활용한 지수 이동 평균(EMA) 계산
         self.smooth_x = adaptive_alpha * dx + (1.0 - adaptive_alpha) * self.smooth_x
