@@ -95,7 +95,7 @@ class PyViacamGUI:
         self.sens_x_label = tk.Label(self.sens_x_container, text=f"민감도 X: {self.config['sensitivity_x']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.sens_x_label.pack(anchor="w")
         self.sens_x_scale = tk.Scale(
-            self.sens_x_container, from_=0.0, to=10.0, resolution=0.1, orient="horizontal",
+            self.sens_x_container, from_=0.0, to=2.0, resolution=0.01, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_sens_x_change
         )
@@ -108,7 +108,7 @@ class PyViacamGUI:
         self.sens_y_label = tk.Label(self.sens_y_container, text=f"민감도 Y: {self.config['sensitivity_y']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.sens_y_label.pack(anchor="w")
         self.sens_y_scale = tk.Scale(
-            self.sens_y_container, from_=0.0, to=10.0, resolution=0.1, orient="horizontal",
+            self.sens_y_container, from_=0.0, to=2.0, resolution=0.01, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_sens_y_change
         )
@@ -147,7 +147,7 @@ class PyViacamGUI:
         self.smooth_scale.set(self.config["smoothing"])
         self.smooth_scale.pack(fill="x", pady=(2, 0))
         
-        # 가속도 및 단축키 변경 영역 (가로 병렬 배치)
+        # 가속도 및 내부 배율 변경 영역 (가로 병렬 배치)
         self.extra_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
         self.extra_frame.pack(fill="x", padx=20, pady=(0, 15))
         self.extra_frame.columnconfigure(0, weight=1)
@@ -159,24 +159,39 @@ class PyViacamGUI:
         self.accel_label = tk.Label(self.accel_container, text=f"가속도: {self.config['acceleration']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.accel_label.pack(anchor="w")
         self.accel_scale = tk.Scale(
-            self.accel_container, from_=1.0, to=1.2, resolution=0.01, orient="horizontal",
+            self.accel_container, from_=0.0, to=2.0, resolution=0.01, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_accel_change
         )
         self.accel_scale.set(self.config["acceleration"])
         self.accel_scale.pack(fill="x", pady=(2, 0))
         
-        # 토글 단축키 설정
-        self.hotkey_container = tk.Frame(self.extra_frame, bg=self.card_color)
-        self.hotkey_container.grid(row=0, column=1, padx=(10, 0), sticky="ew")
-        self.hotkey_lbl = tk.Label(self.hotkey_container, text=f"단축키: {self.config['tracking_toggle_key'].upper()}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
-        self.hotkey_lbl.pack(anchor="w")
+        # 내부 배율
+        self.mult_container = tk.Frame(self.extra_frame, bg=self.card_color)
+        self.mult_container.grid(row=0, column=1, padx=(10, 0), sticky="ew")
+        self.mult_label = tk.Label(self.mult_container, text=f"내부 배율: {self.config.get('internal_multiplier', 40.0):.1f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.mult_label.pack(anchor="w")
+        self.mult_scale = tk.Scale(
+            self.mult_container, from_=0.0, to=80.0, resolution=1.0, orient="horizontal",
+            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
+            highlightthickness=0, bd=0, showvalue=False, command=self.on_mult_change
+        )
+        self.mult_scale.set(self.config.get("internal_multiplier", 40.0))
+        self.mult_scale.pack(fill="x", pady=(2, 0))
+        
+        # 단축키 설정 영역 프레임 (전체 너비 배치)
+        self.hotkey_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
+        self.hotkey_frame.pack(fill="x", padx=20, pady=(0, 15))
+        
+        self.hotkey_lbl = tk.Label(self.hotkey_frame, text=f"단축키: {self.config['tracking_toggle_key'].upper()}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.hotkey_lbl.pack(side="left", anchor="w")
+        
         self.hotkey_btn = tk.Button(
-            self.hotkey_container, text="단축키 변경", font=("Segoe UI", 9, "bold"),
+            self.hotkey_frame, text="단축키 변경", font=("Segoe UI", 9, "bold"),
             bg="#334155", fg=self.text_color, activebackground="#475569", activeforeground=self.text_color,
             bd=0, padx=10, pady=4, relief="flat", cursor="hand2", command=self.start_hotkey_recording
         )
-        self.hotkey_btn.pack(fill="x", pady=(2, 0))
+        self.hotkey_btn.pack(side="right")
 
         # 카메라 상세 제어 프레임 (카메라 설정 & 자동 노출 토글)
         self.cam_ctrl_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
@@ -346,6 +361,12 @@ class PyViacamGUI:
         self.config["smoothing"] = smooth
         self.smooth_label.configure(text=f"스무딩: {smooth:.2f}")
         self.tracker.update_filter_alpha(smooth)
+        config.save_config(self.config)
+
+    def on_mult_change(self, val):
+        mult = float(val)
+        self.config["internal_multiplier"] = mult
+        self.mult_label.configure(text=f"내부 배율: {mult:.1f}")
         config.save_config(self.config)
 
     def start_hotkey_recording(self):

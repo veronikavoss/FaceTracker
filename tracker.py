@@ -336,9 +336,10 @@ class FaceTracker(threading.Thread):
                         fdx *= accel_factor
                         fdy *= accel_factor
                         
-                        # 4) 가속이 끝난 최종 델타에 민감도 배율(40배)을 곱해 최종 화면 마우스 속도로 변환
-                        dx = fdx * self.config["sensitivity_x"] * 40
-                        dy = fdy * self.config["sensitivity_y"] * 40
+                        # 4) 가속이 끝난 최종 델타에 민감도 배율(내부 배율 포함)을 곱해 최종 화면 마우스 속도로 변환
+                        internal_mult = self.config.get("internal_multiplier", 40.0)
+                        dx = fdx * self.config["sensitivity_x"] * internal_mult
+                        dy = fdy * self.config["sensitivity_y"] * internal_mult
                         
                         # 마우스 제어 콜백 호출
                         if self.on_move_callback and (dx != 0.0 or dy != 0.0):
