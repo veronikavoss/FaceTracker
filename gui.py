@@ -95,7 +95,7 @@ class PyViacamGUI:
         self.sens_x_label = tk.Label(self.sens_x_container, text=f"민감도 X: {self.config['sensitivity_x']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.sens_x_label.pack(anchor="w")
         self.sens_x_scale = tk.Scale(
-            self.sens_x_container, from_=0.0, to=2.0, resolution=0.01, orient="horizontal",
+            self.sens_x_container, from_=0.0, to=10.0, resolution=0.1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_sens_x_change
         )
@@ -108,7 +108,7 @@ class PyViacamGUI:
         self.sens_y_label = tk.Label(self.sens_y_container, text=f"민감도 Y: {self.config['sensitivity_y']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.sens_y_label.pack(anchor="w")
         self.sens_y_scale = tk.Scale(
-            self.sens_y_container, from_=0.0, to=2.0, resolution=0.01, orient="horizontal",
+            self.sens_y_container, from_=0.0, to=10.0, resolution=0.1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_sens_y_change
         )
