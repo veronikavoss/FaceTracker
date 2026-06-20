@@ -95,10 +95,10 @@ class PyViacamGUI:
         # X축 민감도
         self.sens_x_container = tk.Frame(self.sens_frame, bg=self.card_color)
         self.sens_x_container.grid(row=0, column=0, padx=(0, 10), sticky="ew")
-        self.sens_x_label = tk.Label(self.sens_x_container, text=f"민감도 X: {self.config['sensitivity_x']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.sens_x_label = tk.Label(self.sens_x_container, text=f"민감도 X: {int(self.config['sensitivity_x'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.sens_x_label.pack(anchor="w")
         self.sens_x_scale = tk.Scale(
-            self.sens_x_container, from_=0.0, to=10.0, resolution=0.1, orient="horizontal",
+            self.sens_x_container, from_=0, to=20, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_sens_x_change
         )
@@ -108,10 +108,10 @@ class PyViacamGUI:
         # Y축 민감도
         self.sens_y_container = tk.Frame(self.sens_frame, bg=self.card_color)
         self.sens_y_container.grid(row=0, column=1, padx=(10, 0), sticky="ew")
-        self.sens_y_label = tk.Label(self.sens_y_container, text=f"민감도 Y: {self.config['sensitivity_y']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.sens_y_label = tk.Label(self.sens_y_container, text=f"민감도 Y: {int(self.config['sensitivity_y'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.sens_y_label.pack(anchor="w")
         self.sens_y_scale = tk.Scale(
-            self.sens_y_container, from_=0.0, to=10.0, resolution=0.1, orient="horizontal",
+            self.sens_y_container, from_=0, to=20, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_sens_y_change
         )
@@ -127,10 +127,10 @@ class PyViacamGUI:
         # 움직임 임계값
         self.thresh_container = tk.Frame(self.filter_frame, bg=self.card_color)
         self.thresh_container.grid(row=0, column=0, padx=(0, 10), sticky="ew")
-        self.thresh_label = tk.Label(self.thresh_container, text=f"임계값: {self.config['motion_threshold']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.thresh_label = tk.Label(self.thresh_container, text=f"임계값: {int(self.config['motion_threshold'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.thresh_label.pack(anchor="w")
         self.thresh_scale = tk.Scale(
-            self.thresh_container, from_=0.0, to=0.28, resolution=0.01, orient="horizontal",
+            self.thresh_container, from_=0, to=10, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_thresh_change
         )
@@ -140,10 +140,10 @@ class PyViacamGUI:
         # 모션 스무딩(부드러움)
         self.smooth_container = tk.Frame(self.filter_frame, bg=self.card_color)
         self.smooth_container.grid(row=0, column=1, padx=(10, 0), sticky="ew")
-        self.smooth_label = tk.Label(self.smooth_container, text=f"스무딩: {self.config['smoothing']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.smooth_label = tk.Label(self.smooth_container, text=f"스무딩: {int(self.config['smoothing'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.smooth_label.pack(anchor="w")
         self.smooth_scale = tk.Scale(
-            self.smooth_container, from_=0.0, to=0.40, resolution=0.01, orient="horizontal",
+            self.smooth_container, from_=0, to=8, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_smooth_change
         )
@@ -159,10 +159,10 @@ class PyViacamGUI:
         # 모션 가속도
         self.accel_container = tk.Frame(self.extra_frame, bg=self.card_color)
         self.accel_container.grid(row=0, column=0, padx=(0, 10), sticky="ew")
-        self.accel_label = tk.Label(self.accel_container, text=f"가속도: {self.config['acceleration']:.2f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.accel_label = tk.Label(self.accel_container, text=f"가속도: {int(self.config['acceleration'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.accel_label.pack(anchor="w")
         self.accel_scale = tk.Scale(
-            self.accel_container, from_=0.0, to=2.0, resolution=0.01, orient="horizontal",
+            self.accel_container, from_=0, to=5, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_accel_change
         )
@@ -398,35 +398,33 @@ class PyViacamGUI:
         self.tracker.set_tracking(new_state)
 
     def on_sens_x_change(self, val):
-        sens = float(val)
+        sens = int(float(val))
         self.config["sensitivity_x"] = sens
-        self.sens_x_label.configure(text=f"민감도 X: {sens:.2f}")
+        self.sens_x_label.configure(text=f"민감도 X: {sens}")
         config.save_config(self.config)
 
     def on_sens_y_change(self, val):
-        sens = float(val)
+        sens = int(float(val))
         self.config["sensitivity_y"] = sens
-        self.sens_y_label.configure(text=f"민감도 Y: {sens:.2f}")
+        self.sens_y_label.configure(text=f"민감도 Y: {sens}")
         config.save_config(self.config)
 
     def on_accel_change(self, val):
-        accel = float(val)
+        accel = int(float(val))
         self.config["acceleration"] = accel
-        self.accel_label.configure(text=f"가속도: {accel:.2f}")
+        self.accel_label.configure(text=f"가속도: {accel}")
         config.save_config(self.config)
 
     def on_thresh_change(self, val):
-        thresh = float(val)
+        thresh = int(float(val))
         self.config["motion_threshold"] = thresh
-        self.thresh_label.configure(text=f"임계값: {thresh:.2f}")
-        self.tracker.update_deadzone(thresh)
+        self.thresh_label.configure(text=f"임계값: {thresh}")
         config.save_config(self.config)
 
     def on_smooth_change(self, val):
-        smooth = float(val)
+        smooth = int(float(val))
         self.config["smoothing"] = smooth
-        self.smooth_label.configure(text=f"스무딩: {smooth:.2f}")
-        self.tracker.update_filter_alpha(smooth)
+        self.smooth_label.configure(text=f"스무딩: {smooth}")
         config.save_config(self.config)
 
     def on_mult_change(self, val):

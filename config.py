@@ -5,12 +5,12 @@ CONFIG_FILE = "pyviacam_config.json"
 
 DEFAULT_CONFIG = {
     "camera_id": 0,
-    "sensitivity_x": 5.0,
-    "sensitivity_y": 5.0,
-    "smoothing": 0.20,  # 0~1 사이의 값. 작을수록 더 부드러워지지만 미세한 지연 증가.
-    "acceleration": 1.0,  # 마우스 가속도 배율 (1.0 = 가속 없음)
-    "motion_threshold": 0.14,  # 가만히 있을 때의 미세 움직임 필터 임계값 (데드존)
-    "internal_multiplier": 40.0,  # 트래커 내부 기본 배율
+    "sensitivity_x": 10,
+    "sensitivity_y": 10,
+    "smoothing": 2,       # 원본 스무딩 0~8 단계 (기본값 2)
+    "acceleration": 2,    # 원본 가속도 0~5 단계 (기본값 2)
+    "motion_threshold": 1,# 원본 EasyStop 0~10 단계 (기본값 1)
+    "internal_multiplier": 1.0,  # 원본 공식을 사용할 때의 기본 좌표 배율 보정치
     "tracking_toggle_key": "f12",  # 활성/비활성 전환 키
     "lock_fps_low_light": False,  # 저조도 FPS 드롭 방지 (자동 노출 비활성화)
     "target_fps": 90,             # 카메라 타겟 FPS 설정 (60 또는 90 등 브리오 사양 지원)

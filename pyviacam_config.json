@@ -1,10 +1,10 @@
 {
     "camera_id": 0,
-    "sensitivity_x": 10.0,
-    "sensitivity_y": 10.0,
+    "sensitivity_x": 10,
+    "sensitivity_y": 10,
     "smoothing": 0.2,
     "tracking_toggle_key": "f12",
-    "acceleration": 1.1,
+    "acceleration": 1,
     "motion_threshold": 0.1,
     "internal_multiplier": 40.0,
     "lock_fps_low_light": false,

@@ -257,8 +257,8 @@ class FaceTracker(threading.Thread):
             criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03)
         )
         
-        # 스무딩 필터 초기화 (설정값 내 모션 임계값 deadzone 연동)
-        self.filter = EMASmoothingFilter(alpha=self.config["smoothing"], deadzone=self.config["motion_threshold"])
+        # 스무딩 필터 초기화 (오리지널 eViacam 설정 수학 공식 기반 필터)
+        self.filter = EMASmoothingFilter(self.config)
         
         # 트래킹 관련 상태 변수
         self.prev_gray = None
@@ -587,32 +587,10 @@ class FaceTracker(threading.Thread):
                             raw_dx = next_point[0][0][0] - current_point[0][0][0]
                             raw_dy = next_point[0][0][1] - current_point[0][0][1]
                         
-                        # 1) 원본 픽셀 변화량(raw_dx, raw_dy)을 먼저 스무딩 및 데드존 필터링!
-                        # 어두운 곳에서는 감지 감쇄용 임계값(deadzone)을 동적으로 올려 미세 노이즈 요동을 완벽 제어
-                        active_deadzone = self.config["motion_threshold"] * temp_deadzone_mult
-                        self.filter.update_deadzone(active_deadzone)
-                        fdx, fdy = self.filter.filter(raw_dx, raw_dy)
+                        # 1) 오리지널 eViacam과 100% 동일한 수식으로 속도(배율), 스무딩(Low-pass), 가속도(Array Curve), 임계값을 모두 처리
+                        dx, dy = self.filter.filter(raw_dx, raw_dy)
                         
-                        # 2) 순수 원본 필터링된 델타(fdx, fdy) 기준으로 가속 계수(accel_factor)를 정밀하게 계산
-                        # 속도 임계값(0.3 픽셀) 이상의 움직임에만 유선형의 부드러운 점진 가속 적용
-                        raw_speed = np.sqrt(fdx**2 + fdy**2)
-                        accel_factor = 1.0
-                        if self.config["acceleration"] > 1.0 and raw_speed > 0.3:
-                            accel_factor = min(
-                                self.config["acceleration"], 
-                                1.0 + (raw_speed - 0.3) * (self.config["acceleration"] - 1.0) * 0.8
-                            )
-                            
-                        # 3) 가속도가 점진적으로 반영된 모션 델타 생성
-                        fdx *= accel_factor
-                        fdy *= accel_factor
-                        
-                        # 4) 가속이 끝난 최종 델타에 민감도 배율(내부 배율 포함)을 곱해 최종 화면 마우스 속도로 변환
-                        internal_mult = self.config.get("internal_multiplier", 40.0)
-                        dx = fdx * self.config["sensitivity_x"] * internal_mult
-                        dy = fdy * self.config["sensitivity_y"] * internal_mult
-                        
-                        # 마우스 제어 콜백 호출
+                        # 2) 마우스 제어 콜백 호출
                         if self.on_move_callback and (dx != 0.0 or dy != 0.0):
                             self.on_move_callback(dx, dy)
                             

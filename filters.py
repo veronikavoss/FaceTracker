@@ -1,65 +1,85 @@
+import math
+
 class EMASmoothingFilter:
     """
-    지수 이동 평균(Exponential Moving Average) 및 데드존(Deadzone)을 결합한 
-    마우스 모션 스무딩 필터입니다. 미세한 떨림(Jitter)을 효과적으로 억제합니다.
+    오리지널 eViacam(C++)의 트래킹 수학 공식을 100% 동일하게 재현한 필터입니다.
+    기존의 Python 호환 필터 대신 원본의 SpeedFactor(pow), LowPassFilter(log10),
+    그리고 SetRelAcceleration2 배열 방식의 가속도 커브를 그대로 적용합니다.
     """
-    def __init__(self, alpha=0.15, deadzone=1.0):
-        self.alpha = alpha
-        self.deadzone = deadzone
-        self.smooth_x = 0.0
-        self.smooth_y = 0.0
-        self.initialized = False
-
-    def update_alpha(self, new_alpha):
-        # alpha는 0.01 ~ 1.0 사이
-        self.alpha = max(0.01, min(1.0, new_alpha))
-
-    def update_deadzone(self, new_deadzone):
-        # 데드존(움직임 임계값) 업데이트
-        self.deadzone = max(0.0, new_deadzone)
+    def __init__(self, config):
+        self.config = config
+        self.dxant = 0.0
+        self.dyant = 0.0
 
     def reset(self):
-        self.smooth_x = 0.0
-        self.smooth_y = 0.0
-        self.initialized = False
+        self.dxant = 0.0
+        self.dyant = 0.0
 
-    def filter(self, dx, dy):
-        """
-        입력받은 원본 델타(dx, dy)를 필터링하여 부드러운 델타(smooth_dx, smooth_dy)를 반환합니다.
-        속도에 기반한 동적 반응 스무딩(Adaptive Smoothing)과 부드러운 마찰 감쇄(Soft Deadzone)를 결합합니다.
-        """
-        # 1. 초기값 설정
-        if not self.initialized:
-            self.smooth_x = dx
-            self.smooth_y = dy
-            self.initialized = True
-            return dx, dy
+    def filter(self, raw_dx, raw_dy):
+        # 1. Apply factors (Speed / 민감도 변환 공식)
+        speed_x = self.config.get("sensitivity_x", 10)
+        speed_y = self.config.get("sensitivity_y", 10)
+        
+        # 원본 공식: pow(e, speed / 6.0)
+        fDx = math.exp(speed_x / 6.0)
+        fDy = math.exp(speed_y / 6.0)
+        
+        # 내부 배율 적용 (해상도 및 픽셀 좌표 차이 보정용. 원본은 화면 절대 좌표의 정규화를 사용하나, 
+        # 파이썬 버전에서는 cv2 캔버스 기반이므로 픽셀 변화량에 대한 기본 스케일 보정이 조금 필요할 수 있습니다.
+        # 일단 원본 비율과 1:1 매칭되도록 맞춥니다.)
+        internal_mult = self.config.get("internal_multiplier", 1.0)
+        
+        dx = raw_dx * fDx * internal_mult
+        dy = raw_dy * fDy * internal_mult
 
-        # 2. 움직임의 실시간 물리 속도(크기) 계산
-        speed = (dx**2 + dy**2)**0.5
+        # 2. Low-pass filter (Smoothness)
+        smoothness = self.config.get("smoothing", 2)
+        smoothness = max(0, min(8, int(smoothness)))
+        m_actualMotionWeight = math.log10(smoothness + 1.0)
+        
+        dx = dx * (1.0 - m_actualMotionWeight) + self.dxant * m_actualMotionWeight
+        dy = dy * (1.0 - m_actualMotionWeight) + self.dyant * m_actualMotionWeight
+        self.dxant = dx
+        self.dyant = dy
 
-        # 3. 어댑티브 알파(Adaptive Alpha) 계산
-        # 속도가 매우 빠를 때만 alpha가 1.0에 도달하도록 2차 곡선형 응답 곡선 적용 (속도 임계값 2.5픽셀)
-        # 느리고 섬세한 머리 움직임 시에는 지수 평균 스무딩 강도가 최대로 유지되도록 개선하여 떨림 방지
-        adaptive_alpha = self.alpha + (1.0 - self.alpha) * min(1.0, (speed / 2.5) ** 2)
-
-        # 4. 동적 알파를 활용한 지수 이동 평균(EMA) 계산
-        self.smooth_x = adaptive_alpha * dx + (1.0 - adaptive_alpha) * self.smooth_x
-        self.smooth_y = adaptive_alpha * dy + (1.0 - adaptive_alpha) * self.smooth_y
-
-        # 5. 하이브리드 데드존(Hybrid Deadzone) 적용
-        # 임계값의 60% 미만인 미세 요동은 완전히 0으로 무력화하여 진동 원천 차단
-        if speed < self.deadzone * 0.6:
-            return 0.0, 0.0
-        # 60% ~ 100% 구간은 부드러운 감쇄 곡선을 적용해 급작스러운 끊김 방지
-        elif speed < self.deadzone:
-            if self.deadzone > 0.0:
-                ratio = speed / self.deadzone
-                final_dx = self.smooth_x * (ratio ** 2)
-                final_dy = self.smooth_y * (ratio ** 2)
-            else:
-                final_dx, final_dy = self.smooth_x, self.smooth_y
+        # 3. Acceleration (SetRelAcceleration2 로직)
+        accel = self.config.get("acceleration", 2)
+        accel = max(0, min(5, int(accel)))
+        distance = math.hypot(dx, dy)
+        idx = int(distance + 0.5)
+        
+        delta0 = 9999
+        factor0 = 1.0
+        delta1 = 9999
+        factor1 = 1.0
+        
+        if accel == 1:
+            delta0 = 7; factor0 = 1.5
+        elif accel == 2:
+            delta0 = 7; factor0 = 2.0
+        elif accel == 3:
+            delta0 = 7; factor0 = 1.5; delta1 = 14; factor1 = 2.0
+        elif accel == 4:
+            delta0 = 7; factor0 = 2.0; delta1 = 14; factor1 = 1.5
+        elif accel == 5:
+            delta0 = 7; factor0 = 2.0; delta1 = 14; factor1 = 2.0
+            
+        factor = 1.0
+        if idx < delta0:
+            factor = 1.0
+        elif idx < delta1:
+            factor = factor0
         else:
-            final_dx, final_dy = self.smooth_x, self.smooth_y
+            factor = (factor0 * factor1) + ((idx - delta1) * 0.1)
+            
+        dx *= factor
+        dy *= factor
 
-        return final_dx, final_dy
+        # 4. Apply delta threshold (EasyStop / motion_threshold)
+        threshold = self.config.get("motion_threshold", 1)
+        if -threshold < dx < threshold:
+            dx = 0.0
+        if -threshold < dy < threshold:
+            dy = 0.0
+
+        return dx, dy
