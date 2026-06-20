@@ -46,10 +46,11 @@ def main():
     def on_frame_callback(frame, tracking_enabled, nose_x, nose_y, fps, w, h):
         # 트래커(서브 스레드)에서 GUI(메인 스레드)로 안전하게 그래픽 업데이트 전달
         try:
-            if root.winfo_exists():
+            # GUI 스레드 과부하로 인한 대기열 누적(TclError/MemoryError) 방지를 위한 프레임 드롭
+            if root.winfo_exists() and not gui.update_pending:
+                gui.update_pending = True
                 root.after_idle(gui.update_frame, frame, tracking_enabled, nose_x, nose_y, fps, w, h)
-        except RuntimeError:
-            # Tkinter가 초기화 중이거나 종료되었을 때 발생하는 예외 안전 조치
+        except Exception:
             pass
 
     def on_move_callback(dx, dy):

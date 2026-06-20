@@ -4,6 +4,237 @@ import threading
 import time
 from filters import EMASmoothingFilter
 
+# winrt API 관련 라이브러리 안전 임포트
+WINRT_AVAILABLE = False
+try:
+    import winrt.windows.media.capture as wmc
+    import winrt.windows.media.capture.frames as wmcf
+    import winrt.windows.graphics.imaging as wgi
+    import winrt.windows.foundation as wf
+    import winrt.windows.foundation.collections as wfc
+    import queue
+    import asyncio
+    WINRT_AVAILABLE = True
+except ImportError:
+    pass
+
+class WinRTIRCamera:
+    """
+    Windows 10/11의 WinRT API를 이용해 로지텍 브리오 등
+    시스템에 숨겨진 적외선(IR) 카메라 장치를 비동기로 액세스하고 캡처합니다.
+    """
+    def __init__(self):
+        self.frame_queue = queue.Queue(maxsize=2)
+        self.running = False
+        self.loop = None
+        self.thread = None
+        self.width = 640
+        self.height = 480
+        self.is_opened = False
+
+    def isOpened(self):
+        return self.is_opened
+
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+        # 카메라 디바이스가 완전히 오픈되어 스트림을 시작할 때까지 안전 대기
+        start_t = time.time()
+        while not self.is_opened and time.time() - start_t < 3.0:
+            if not self.running:
+                break
+            time.sleep(0.1)
+
+    def _run_loop(self):
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+        try:
+            self.loop.run_until_complete(self._capture_loop())
+        except Exception as e:
+            print(f"[WinRT IR] 백그라운드 캡처 루프 크래시: {e}")
+            self.is_opened = False
+            self.running = False
+
+    async def _capture_loop(self):
+        # 1. 시스템의 모든 프레임 소스에서 Infrared 소스를 지원하는 기기 검색
+        groups = await wmcf.MediaFrameSourceGroup.find_all_async()
+        selected_group = None
+        selected_source_info = None
+        
+        for group in groups:
+            for source_info in group.source_infos:
+                if source_info.source_kind == wmcf.MediaFrameSourceKind.INFRARED:
+                    selected_group = group
+                    selected_source_info = source_info
+                    break
+            if selected_group:
+                break
+                
+        if not selected_group:
+            print("[WinRT IR] 적외선(IR) 카메라 장치를 감지하지 못했습니다.")
+            self.running = False
+            return
+            
+        print(f"[WinRT IR] 적외선 장치 바인딩 완료: {selected_group.display_name}")
+        
+        # 2. 미디어 캡처 객체 초기화
+        media_capture = wmc.MediaCapture()
+        settings = wmc.MediaCaptureInitializationSettings()
+        settings.source_group = selected_group
+        settings.streaming_capture_mode = wmc.StreamingCaptureMode.VIDEO
+        settings.memory_preference = wmc.MediaCaptureMemoryPreference.CPU
+        
+        try:
+            await media_capture.initialize_with_settings_async(settings)
+        except Exception as e:
+            print(f"[WinRT IR] 미디어 캡처 초기화 실패: {e}")
+            self.running = False
+            return
+            
+        # 3. 프레임 리더 생성 및 구독 시작
+        source = media_capture.frame_sources[selected_source_info.id]
+        fmt = source.current_format
+        print(f"[WinRT IR] 소스 포맷: {fmt.major_type}/{fmt.subtype}, {fmt.video_format.width}x{fmt.video_format.height}")
+        
+        try:
+            frame_reader = await media_capture.create_frame_reader_async(source)
+        except Exception as e:
+            print(f"[WinRT IR] 프레임 리더 생성 실패: {e}")
+            self.running = False
+            return
+        
+        start_status = await frame_reader.start_async()
+        print(f"[WinRT IR] 프레임 리더 시작 상태: {start_status}")
+        
+        self.is_opened = True
+        
+        try:
+            while self.running:
+                frame_reference = frame_reader.try_acquire_latest_frame()
+                if frame_reference:
+                    video_frame = frame_reference.video_media_frame
+                    if video_frame:
+                        software_bitmap = video_frame.software_bitmap
+                        if software_bitmap:
+                            w = software_bitmap.pixel_width
+                            h = software_bitmap.pixel_height
+                            self.width = w
+                            self.height = h
+                            
+                            buffer = None
+                            reference = None
+                            try:
+                                buffer = software_bitmap.lock_buffer(wgi.BitmapBufferAccessMode.READ)
+                                reference = buffer.create_reference()
+                                
+                                # reference 객체가 버퍼 프로토콜을 만족하므로 np.frombuffer로 변환 시도
+                                try:
+                                    raw_data = np.frombuffer(reference, dtype=np.uint8)
+                                except TypeError:
+                                    raw_data = np.frombuffer(bytes(reference), dtype=np.uint8)
+                                px_len = len(raw_data)
+                                
+                                frame_data = None
+                                # 비디오 카드 포맷별 적응형 그레이스케일 추출
+                                if px_len == w * h:
+                                    frame_data = raw_data.reshape((h, w)).copy()
+                                elif px_len == w * h * 2:
+                                    data16 = raw_data.view(np.uint16).reshape((h, w))
+                                    frame_data = (data16 >> 8).astype(np.uint8).copy()
+                                elif px_len == w * h * 4:
+                                    bgra = raw_data.reshape((h, w, 4))
+                                    frame_data = cv2.cvtColor(bgra, cv2.COLOR_BGRA2GRAY).copy()
+                                elif px_len >= w * h:
+                                    # stride 패딩이 있는 경우 행별로 추출
+                                    stride = px_len // h
+                                    frame_data = raw_data.reshape((h, stride))[:, :w].copy()
+                                    
+                                if frame_data is not None:
+                                    # [Windows Hello IR 스트로빙 방지 및 FPS 유지]
+                                    current_mean = np.mean(frame_data)
+                                    
+                                    # 최근 밝기 최대치를 추적 (기준점)
+                                    if not hasattr(self, 'max_mean_brightness'):
+                                        self.max_mean_brightness = current_mean
+                                        self.last_good_frame = frame_data.copy()
+                                        
+                                    # 환경 밝기 변화에 적응하기 위해 기준점 서서히 감소
+                                    self.max_mean_brightness = max(1.0, self.max_mean_brightness * 0.995)
+                                    
+                                    if current_mean > self.max_mean_brightness:
+                                        self.max_mean_brightness = current_mean
+                                        
+                                    # 기준점의 절반 미만으로 급격히 어두워진 프레임(LED Off)은 이전 프레임으로 대체하여 깜빡임 제거
+                                    if current_mean < self.max_mean_brightness * 0.5:
+                                        frame_data = self.last_good_frame.copy()
+                                    else:
+                                        self.last_good_frame = frame_data.copy()
+
+                                    if self.frame_queue.full():
+                                        try:
+                                            self.frame_queue.get_nowait()
+                                        except queue.Empty:
+                                            pass
+                                    self.frame_queue.put(frame_data)
+                            except Exception as e:
+                                print(f"[WinRT IR] 프레임 변환 오류: {e}")
+                            finally:
+                                if reference:
+                                    try:
+                                        reference.close()
+                                    except:
+                                        pass
+                                if buffer:
+                                    try:
+                                        buffer.close()
+                                    except:
+                                        pass
+                    frame_reference.close()
+                await asyncio.sleep(0.002)
+        finally:
+            self.is_opened = False
+            try:
+                await frame_reader.stop_async()
+            except Exception:
+                pass
+            try:
+                media_capture.close()
+            except Exception:
+                pass
+
+    def read(self):
+        if not self.running or not self.is_opened:
+            return False, None
+        try:
+            gray_frame = self.frame_queue.get(timeout=0.05)
+            # 기존 트래커 및 얼굴 검출 파이프라인(BGR 3채널 기준)과의 완벽 호환을 위한 BGR 복제 변환
+            bgr_frame = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2BGR)
+            return True, bgr_frame
+        except queue.Empty:
+            return False, None
+
+    def get(self, propId):
+        if propId == cv2.CAP_PROP_FRAME_WIDTH:
+            return self.width
+        elif propId == cv2.CAP_PROP_FRAME_HEIGHT:
+            return self.height
+        elif propId == cv2.CAP_PROP_FPS:
+            return 30.0
+        elif propId == cv2.CAP_PROP_FOURCC:
+            return 0
+        return 0.0
+
+    def set(self, propId, value):
+        return False
+
+    def release(self):
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=1.5)
+            self.thread = None
+        self.is_opened = False
+
 class FaceTracker(threading.Thread):
     def __init__(self, config, on_frame_callback=None, on_move_callback=None):
         super().__init__()
@@ -76,7 +307,7 @@ class FaceTracker(threading.Thread):
             except Exception as e:
                 print(f"노출 제어 설정 중 에러: {e}")
 
-    def _detect_face(self, gray, w):
+    def _detect_face(self, gray, w, use_ir=False):
         # 가로 해상도가 320px가 되도록 동적으로 축소 비율 계산 (가벼운 연산량과 높은 검출 정확도 동시 만족)
         scale = 320.0 / w if w > 320 else 1.0
         h_small = int(gray.shape[0] * scale)
@@ -84,8 +315,9 @@ class FaceTracker(threading.Thread):
         gray_small = cv2.resize(gray, (w_small, h_small))
         
         min_size = int(w_small * 0.12)
-        # scaleFactor를 1.2에서 1.1로 낮추고, minNeighbors를 5에서 4로 낮추어 얼굴 인식의 감도와 성공률을 획기적으로 개선
-        faces = self.face_cascade.detectMultiScale(gray_small, scaleFactor=1.1, minNeighbors=4, minSize=(min_size, min_size))
+        # IR 카메라 영상에서는 대비가 부족하므로 minNeighbors를 낮춰 얼굴 검출률을 높입니다.
+        min_neighbors = 2 if use_ir else 4
+        faces = self.face_cascade.detectMultiScale(gray_small, scaleFactor=1.1, minNeighbors=min_neighbors, minSize=(min_size, min_size))
         
         if len(faces) > 0:
             x_s, y_s, fw_s, fh_s = max(faces, key=lambda f: f[2] * f[3])
@@ -101,6 +333,7 @@ class FaceTracker(threading.Thread):
 
     def run(self):
         camera_id = self.config["camera_id"]
+        use_ir = self.config.get("use_ir_camera", False)
         
         # 설정 파일로부터 카메라 백엔드 로드 (DSHOW, MSMF, AUTO)
         backend_str = self.config.get("camera_backend", "DSHOW").upper()
@@ -114,7 +347,14 @@ class FaceTracker(threading.Thread):
             backend = cv2.CAP_DSHOW
             print("[카메라 백엔드] DSHOW(DirectShow) 모드로 가동합니다.")
             
-        self.cap = cv2.VideoCapture(camera_id, backend)
+        if use_ir and WINRT_AVAILABLE:
+            print("[카메라] WinRT 기반 적외선(IR) 카메라 모드를 시작합니다.")
+            self.cap = WinRTIRCamera()
+            self.cap.start()
+        else:
+            if use_ir and not WINRT_AVAILABLE:
+                print("[카메라 경고] IR 모드가 설정되었으나 winrt 라이브러리를 로드할 수 없어 일반 카메라 모드로 전환합니다.")
+            self.cap = cv2.VideoCapture(camera_id, backend)
         
         def apply_settings(cap, target_fps, target_w, target_h):
             try:
@@ -138,8 +378,17 @@ class FaceTracker(threading.Thread):
         target_fps = self.config.get("target_fps", 90)
         target_w = self.config.get("camera_width", 640)
         target_h = self.config.get("camera_height", 360)
-        w, h, fps, codec, results = apply_settings(self.cap, target_fps, target_w, target_h)
-        print(f"[카메라 설정 디버그] FOURCC(MJPG) 설정 결과: {results[0]} | 가로: {results[1]} | 세로: {results[2]} | FPS: {results[3]}")
+        
+        if use_ir and WINRT_AVAILABLE:
+            w = self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+            h = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            codec = "RAW"
+            results = (False, False, False, False)
+        else:
+            w, h, fps, codec, results = apply_settings(self.cap, target_fps, target_w, target_h)
+            print(f"[카메라 설정 디버그] FOURCC(MJPG) 설정 결과: {results[0]} | 가로: {results[1]} | 세로: {results[2]} | FPS: {results[3]}")
+            
         print(f"[카메라 최종 연결 완료] 해상도: {int(w)}x{int(h)} | FPS: {int(fps)} | 최종 코덱: {codec}")
 
         # 초기 설정값 기반 노출 모드 적용
@@ -158,28 +407,43 @@ class FaceTracker(threading.Thread):
         fps_counter = 0
         current_fps = 0
         while self.running:
-            # 실시간 카메라 ID 변경 감지 시 동적 재연결
-            if self.config.get("camera_id", 0) != current_camera_id:
+            # 실시간 카메라 ID 또는 적외선 모드 변경 감지 시 동적 재연결
+            if self.config.get("camera_id", 0) != current_camera_id or self.config.get("use_ir_camera", False) != use_ir:
                 new_camera_id = self.config.get("camera_id", 0)
-                print(f"[카메라 변경 감지] Index {current_camera_id} -> {new_camera_id}")
+                new_use_ir = self.config.get("use_ir_camera", False)
+                print(f"[카메라 변경 감지] IR: {use_ir} -> {new_use_ir} | ID: {current_camera_id} -> {new_camera_id}")
                 self.reset_tracking_state()
-                if self.cap and self.cap.isOpened():
+                if self.cap:
                     self.cap.release()
                 
                 current_camera_id = new_camera_id
-                self.cap = cv2.VideoCapture(current_camera_id, backend)
-                w, h, fps, codec, results = apply_settings(self.cap, target_fps, target_w, target_h)
+                use_ir = new_use_ir
                 
-                # 노출 모드 재적용
-                lock_fps = self.config.get("lock_fps_low_light", False)
-                try:
-                    if lock_fps:
-                        self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
-                        self.cap.set(cv2.CAP_PROP_EXPOSURE, -7.0)
-                    else:
-                        self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3)
-                except Exception as e:
-                    print(f"노출 설정 재적용 중 에러: {e}")
+                if use_ir and WINRT_AVAILABLE:
+                    print("[카메라] WinRT 기반 적외선(IR) 카메라 모드를 재시작합니다.")
+                    self.cap = WinRTIRCamera()
+                    self.cap.start()
+                    w = self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+                    h = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                    fps = self.cap.get(cv2.CAP_PROP_FPS)
+                    codec = "RAW"
+                    results = (False, False, False, False)
+                else:
+                    if use_ir and not WINRT_AVAILABLE:
+                        print("[카메라 경고] IR 모드가 설정되었으나 winrt 라이브러리를 로드할 수 없어 일반 카메라 모드로 전환합니다.")
+                    self.cap = cv2.VideoCapture(current_camera_id, backend)
+                    w, h, fps, codec, results = apply_settings(self.cap, target_fps, target_w, target_h)
+                    
+                    # 노출 모드 재적용
+                    lock_fps = self.config.get("lock_fps_low_light", False)
+                    try:
+                        if lock_fps:
+                            self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
+                            self.cap.set(cv2.CAP_PROP_EXPOSURE, -7.0)
+                        else:
+                            self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3)
+                    except Exception as e:
+                        print(f"노출 설정 재적용 중 에러: {e}")
                 
                 fps_start_time = time.time()
                 fps_counter = 0
@@ -215,14 +479,21 @@ class FaceTracker(threading.Thread):
             # 저조도(어두운 환경) 극복을 위한 어댑티브 전처리 (어두울 때만 대비 증폭)
             mean_brightness = np.mean(gray)
             
-            if mean_brightness < 60:
+            if use_ir:
+                # IR(적외선) 모드에서는 명암비가 부족해 얼굴 검출이 매우 어렵습니다.
+                # 스트로빙 검은 프레임이 제거된 상태이므로 항상 강력한 대비 증폭(CLAHE)을 적용하여 이목구비를 뚜렷하게 만듭니다.
+                clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+                gray_enhanced = clahe.apply(gray)
+                gray = cv2.GaussianBlur(gray_enhanced, (5, 5), 0)
+                temp_deadzone_mult = 1.0
+            elif mean_brightness < 60:
                 # 조도가 낮을 때만 대비를 소프트하게 향상 (clipLimit을 1.5로 완화하여 노이즈 증폭 억제)
                 clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
                 gray_enhanced = clahe.apply(gray)
                 gray = cv2.GaussianBlur(gray_enhanced, (5, 5), 0)
                 temp_deadzone_mult = 1.5
             else:
-                # 일반 조도에서는 대비 보정을 생략해 센서 노이즈 추가 증폭 차단
+                # 일반 조도에서는 대비 보정을 생략해 센서 노이즈 추가 증폭 및 플리커링 차단
                 gray = cv2.GaussianBlur(gray, (3, 3), 0)
                 temp_deadzone_mult = 1.0
             
@@ -234,7 +505,7 @@ class FaceTracker(threading.Thread):
                 # 3-1. 이전 프레임 정보나 추적점이 없다면 새로 얼굴을 인식하여 특징점 지정
                 if self.track_point is None or self.prev_gray is None:
                     # 얼굴 영역 검출
-                    face = self._detect_face(gray, w)
+                    face = self._detect_face(gray, w, use_ir)
                     
                     if face is not None:
                         x, y, fw, fh = face
@@ -272,7 +543,7 @@ class FaceTracker(threading.Thread):
                     if status is not None and status[0][0] == 1:
                         # 주기적인 코 끝 고정 보정 (20프레임마다 작동, 약 0.33초 주기)
                         if self.frame_counter % 20 == 0:
-                            face = self._detect_face(gray, w)
+                            face = self._detect_face(gray, w, use_ir)
                             if face is not None:
                                 x, y, fw, fh = face
                                 if self.face_rect_smooth is None:
@@ -357,7 +628,7 @@ class FaceTracker(threading.Thread):
                         self.reset_tracking_state()
             else:
                 # 활성화되지 않았을 때는 그냥 얼굴 영역만 시각화용으로 가볍게 찾아줌
-                face = self._detect_face(gray, w)
+                face = self._detect_face(gray, w, use_ir)
                 if face is not None:
                     x, y, fw, fh = face
                     self.face_rect = (x, y, fw, fh)

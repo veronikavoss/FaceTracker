@@ -3,6 +3,7 @@ from tkinter import ttk
 import cv2
 from PIL import Image, ImageTk
 import config
+from tracker import WINRT_AVAILABLE
 
 class PyViacamGUI:
     def __init__(self, root, app_config, tracker):
@@ -42,6 +43,8 @@ class PyViacamGUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         
         self.photo = None
+        self.image_id = None
+        self.update_pending = False
 
     def _init_camera_panel(self):
         # 카메라 패널 프레임 (Card 스타일)
@@ -255,6 +258,20 @@ class PyViacamGUI:
         )
         self.auto_exp_chk.pack(anchor="w", pady=(0, 8))
         
+        # 1-2. 적외선(IR) 카메라 모드 토글 체크박스
+        self.ir_mode_var = tk.BooleanVar(value=self.config.get("use_ir_camera", False))
+        ir_state = tk.NORMAL if WINRT_AVAILABLE else tk.DISABLED
+        ir_text = "Logitech Brio 적외선(IR) 모드 활성화" if WINRT_AVAILABLE else "Logitech Brio 적외선(IR) 모드 (Windows/WinRT 전용)"
+        self.ir_mode_chk = tk.Checkbutton(
+            self.cam_ctrl_frame, text=ir_text, 
+            variable=self.ir_mode_var, command=self.on_ir_mode_toggle,
+            state=ir_state,
+            bg=self.card_color, fg=self.text_color if WINRT_AVAILABLE else self.muted_color, selectcolor="#1E293B",
+            activebackground=self.card_color, activeforeground=self.text_color,
+            font=("Segoe UI", 9), bd=0, highlightthickness=0
+        )
+        self.ir_mode_chk.pack(anchor="w", pady=(0, 8))
+        
         # 2. 카메라 설정 다이얼로그 호출 버튼
         self.cam_settings_btn = tk.Button(
             self.cam_ctrl_frame, text="📷 카메라 고급 설정 창 열기", font=("Segoe UI", 9, "bold"),
@@ -291,6 +308,7 @@ class PyViacamGUI:
         """
         카메라 스레드로부터 실시간 프레임을 전달받아 GUI에 렌더링합니다.
         """
+        self.update_pending = False
         # FPS & 해상도 정보 라벨 갱신
         self.info_label.configure(text=f"FPS: {fps} | {w}x{h}")
 
@@ -301,17 +319,25 @@ class PyViacamGUI:
         # 캔버스 크기 동적 조절
         if int(self.canvas.cget("width")) != display_w or int(self.canvas.cget("height")) != display_h:
             self.canvas.configure(width=display_w, height=display_h)
+            self.image_id = None
+            self.canvas.delete("all")
 
         cv_frame = cv2.resize(cv_frame, (display_w, display_h))
         rgb_image = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(rgb_image)
         
-        # Tkinter PhotoImage 객체 생성
-        self.photo = ImageTk.PhotoImage(image=pil_img)
+        # Tkinter PhotoImage 객체 재사용(메모리 누수 방지)
+        if self.photo is None or self.photo.width() != display_w or self.photo.height() != display_h:
+            self.photo = ImageTk.PhotoImage(image=pil_img)
+        else:
+            self.photo.paste(pil_img)
         
-        # 캔버스에 이미지 업데이트
-        self.canvas.delete("all")
-        self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
+        # 캔버스에 이미지 업데이트 (delete("all") 대신 itemconfig를 사용하여 깜빡임 방지)
+        if self.image_id is None:
+            self.canvas.delete("all")  # 대기 상태 텍스트 등을 지우기 위한 초기화
+            self.image_id = self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
+        else:
+            self.canvas.itemconfig(self.image_id, image=self.photo)
         
         # 트래킹 상태에 따라 카드 테두리 및 텍스트 상태 변경 (동적 단축키 반영)
         hotkey = self.config['tracking_toggle_key'].upper()
@@ -439,6 +465,12 @@ class PyViacamGUI:
         self.config["lock_fps_low_light"] = val
         config.save_config(self.config)
         self.tracker.set_auto_exposure(not val)
+
+    def on_ir_mode_toggle(self):
+        val = self.ir_mode_var.get()
+        self.config["use_ir_camera"] = val
+        config.save_config(self.config)
+        print(f"[GUI] 적외선(IR) 모드 설정이 변경되었습니다: {val}")
 
     def open_camera_settings(self):
         self.tracker.open_camera_settings()

@@ -2,3 +2,8 @@ opencv-python
 mediapipe
 pyautogui
 pynput
+winrt-Windows.Foundation
+winrt-Windows.Foundation.Collections
+winrt-Windows.Graphics.Imaging
+winrt-Windows.Media.Capture
+winrt-Windows.Media.Capture.Frames
