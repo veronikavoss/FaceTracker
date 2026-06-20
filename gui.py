@@ -247,6 +247,38 @@ class PyViacamGUI:
         self.cam_combo.pack(side="left", fill="x", expand=True)
         self.cam_combo.bind("<<ComboboxSelected>>", self.on_camera_select)
         
+        # 0-1. 해상도 및 FPS 선택 프레임
+        self.res_fps_frame = tk.Frame(self.cam_ctrl_frame, bg=self.card_color)
+        self.res_fps_frame.pack(fill="x", pady=(0, 10))
+        
+        # 해상도 선택
+        self.res_label = tk.Label(self.res_fps_frame, text="해상도:", font=("Segoe UI", 9, "bold"), fg=self.text_color, bg=self.card_color)
+        self.res_label.pack(side="left", padx=(0, 5))
+        
+        res_options = ["320x240", "640x360", "640x480", "1280x720", "1920x1080"]
+        self.res_combo = ttk.Combobox(self.res_fps_frame, values=res_options, state="readonly", width=10)
+        current_res = f"{self.config.get('camera_width', 640)}x{self.config.get('camera_height', 480)}"
+        if current_res not in res_options:
+            res_options.append(current_res)
+            self.res_combo['values'] = res_options
+        self.res_combo.set(current_res)
+        self.res_combo.pack(side="left", padx=(0, 15))
+        self.res_combo.bind("<<ComboboxSelected>>", self.on_res_fps_select)
+        
+        # FPS 선택
+        self.fps_label = tk.Label(self.res_fps_frame, text="FPS:", font=("Segoe UI", 9, "bold"), fg=self.text_color, bg=self.card_color)
+        self.fps_label.pack(side="left", padx=(0, 5))
+        
+        fps_options = ["30", "60", "90", "120"]
+        self.fps_combo = ttk.Combobox(self.res_fps_frame, values=fps_options, state="readonly", width=5)
+        current_fps = str(self.config.get("target_fps", 30))
+        if current_fps not in fps_options:
+            fps_options.append(current_fps)
+            self.fps_combo['values'] = fps_options
+        self.fps_combo.set(current_fps)
+        self.fps_combo.pack(side="left", expand=True)
+        self.fps_combo.bind("<<ComboboxSelected>>", self.on_res_fps_select)
+        
         # 1. 자동 노출 끄기 (FPS 고정) 체크박스
         self.auto_exposure_var = tk.BooleanVar(value=self.config.get("lock_fps_low_light", False))
         self.auto_exp_chk = tk.Checkbutton(
@@ -326,18 +358,26 @@ class PyViacamGUI:
         rgb_image = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(rgb_image)
         
-        # Tkinter PhotoImage 객체 재사용(메모리 누수 방지)
-        if self.photo is None or self.photo.width() != display_w or self.photo.height() != display_h:
-            self.photo = ImageTk.PhotoImage(image=pil_img)
-        else:
-            self.photo.paste(pil_img)
+        # Tkinter PhotoImage 메모리 누수(TclError 및 MemoryError) 완벽 방지
+        new_photo = ImageTk.PhotoImage(image=pil_img)
         
         # 캔버스에 이미지 업데이트 (delete("all") 대신 itemconfig를 사용하여 깜빡임 방지)
         if self.image_id is None:
             self.canvas.delete("all")  # 대기 상태 텍스트 등을 지우기 위한 초기화
-            self.image_id = self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
+            self.image_id = self.canvas.create_image(0, 0, anchor="nw", image=new_photo)
         else:
-            self.canvas.itemconfig(self.image_id, image=self.photo)
+            self.canvas.itemconfig(self.image_id, image=new_photo)
+            
+        # 기존 객체를 명시적으로 해제 (Tcl 가비지 컬렉터 한계 극복)
+        old_photo = getattr(self, "photo", None)
+        self.photo = new_photo
+        if old_photo is not None:
+            try:
+                # Tcl 엔진 내부의 이미지 버퍼를 즉각 삭제하여 메모리 누수 원천 차단
+                self.canvas.tk.call("image", "delete", old_photo.name)
+            except Exception:
+                pass
+            del old_photo
         
         # 트래킹 상태에 따라 카드 테두리 및 텍스트 상태 변경 (동적 단축키 반영)
         hotkey = self.config['tracking_toggle_key'].upper()
@@ -509,8 +549,39 @@ class PyViacamGUI:
                 self.config["camera_id"] = selected_idx
                 config.save_config(self.config)
                 print(f"[GUI] 카메라가 인덱스 {selected_idx}로 변경되었습니다.")
+                import tkinter.messagebox as messagebox
+                messagebox.showinfo("설정 변경됨", "카메라 변경이 저장되었습니다.\n프로그램을 재시작해야 적용됩니다.")
         except Exception as e:
             print(f"카메라 선택 이벤트 처리 중 오류: {e}")
+
+    def on_res_fps_select(self, event=None):
+        res_str = self.res_combo.get()
+        fps_str = self.fps_combo.get()
+        changed = False
+        
+        try:
+            w_str, h_str = res_str.split("x")
+            w, h = int(w_str), int(h_str)
+            if self.config.get("camera_width") != w or self.config.get("camera_height") != h:
+                self.config["camera_width"] = w
+                self.config["camera_height"] = h
+                changed = True
+        except Exception:
+            pass
+            
+        try:
+            fps = int(fps_str)
+            if self.config.get("target_fps") != fps:
+                self.config["target_fps"] = fps
+                changed = True
+        except Exception:
+            pass
+            
+        if changed:
+            config.save_config(self.config)
+            print(f"[GUI] 해상도 {res_str}, FPS {fps_str} 로 변경되었습니다.")
+            import tkinter.messagebox as messagebox
+            messagebox.showinfo("설정 변경됨", "해상도 및 FPS 설정이 저장되었습니다.\n프로그램을 재시작해야 새 설정으로 카메라가 초기화됩니다.")
 
     def on_close(self):
         self.tracker.stop_tracker()
