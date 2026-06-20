@@ -340,7 +340,6 @@ class PyViacamGUI:
         """
         카메라 스레드로부터 실시간 프레임을 전달받아 GUI에 렌더링합니다.
         """
-        self.update_pending = False
         # FPS & 해상도 정보 라벨 갱신
         self.info_label.configure(text=f"FPS: {fps} | {w}x{h}")
 
@@ -353,31 +352,25 @@ class PyViacamGUI:
             self.canvas.configure(width=display_w, height=display_h)
             self.image_id = None
             self.canvas.delete("all")
+            self.photo = None
 
         cv_frame = cv2.resize(cv_frame, (display_w, display_h))
         rgb_image = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(rgb_image)
         
-        # Tkinter PhotoImage 메모리 누수(TclError 및 MemoryError) 완벽 방지
-        new_photo = ImageTk.PhotoImage(image=pil_img)
-        
-        # 캔버스에 이미지 업데이트 (delete("all") 대신 itemconfig를 사용하여 깜빡임 방지)
-        if self.image_id is None:
-            self.canvas.delete("all")  # 대기 상태 텍스트 등을 지우기 위한 초기화
-            self.image_id = self.canvas.create_image(0, 0, anchor="nw", image=new_photo)
+        # Tkinter PhotoImage 재사용 (메모리 누수 원천 방지)
+        if getattr(self, "photo", None) is None or self.photo.width() != display_w or self.photo.height() != display_h:
+            self.photo = ImageTk.PhotoImage(image=pil_img)
+            self.image_id = None
         else:
-            self.canvas.itemconfig(self.image_id, image=new_photo)
-            
-        # 기존 객체를 명시적으로 해제 (Tcl 가비지 컬렉터 한계 극복)
-        old_photo = getattr(self, "photo", None)
-        self.photo = new_photo
-        if old_photo is not None:
-            try:
-                # Tcl 엔진 내부의 이미지 버퍼를 즉각 삭제하여 메모리 누수 원천 차단
-                self.canvas.tk.call("image", "delete", old_photo.name)
-            except Exception:
-                pass
-            del old_photo
+            self.photo.paste(pil_img)
+        
+        # 캔버스에 이미지 업데이트
+        if self.image_id is None:
+            self.canvas.delete("all")
+            self.image_id = self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
+        else:
+            self.canvas.itemconfig(self.image_id, image=self.photo)
         
         # 트래킹 상태에 따라 카드 테두리 및 텍스트 상태 변경 (동적 단축키 반영)
         hotkey = self.config['tracking_toggle_key'].upper()
@@ -389,6 +382,9 @@ class PyViacamGUI:
             self.cam_frame.configure(highlightbackground="#334155")
             self.status_label.configure(text=f"비활성 상태 ({hotkey}키로 활성화)", fg=self.inactive_color)
             self.toggle_btn.configure(bg=self.accent_color, text=f"추적 시작 ({hotkey})")
+            
+        # 렌더링이 완전히 끝난 후 다음 프레임을 받을 수 있도록 락 해제
+        self.update_pending = False
 
     def manual_toggle(self):
         """
