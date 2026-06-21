@@ -98,7 +98,7 @@ class PyViacamGUI:
         self.sens_x_label = tk.Label(self.sens_x_container, text=f"민감도 X: {int(self.config['sensitivity_x'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.sens_x_label.pack(anchor="w")
         self.sens_x_scale = tk.Scale(
-            self.sens_x_container, from_=0, to=20, resolution=1, orient="horizontal",
+            self.sens_x_container, from_=0, to=30, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_sens_x_change
         )
@@ -111,7 +111,7 @@ class PyViacamGUI:
         self.sens_y_label = tk.Label(self.sens_y_container, text=f"민감도 Y: {int(self.config['sensitivity_y'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.sens_y_label.pack(anchor="w")
         self.sens_y_scale = tk.Scale(
-            self.sens_y_container, from_=0, to=20, resolution=1, orient="horizontal",
+            self.sens_y_container, from_=0, to=30, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_sens_y_change
         )
@@ -150,37 +150,20 @@ class PyViacamGUI:
         self.smooth_scale.set(self.config["smoothing"])
         self.smooth_scale.pack(fill="x", pady=(2, 0))
         
-        # 가속도 및 내부 배율 변경 영역 (가로 병렬 배치)
+        # 가속도 조절 영역
         self.extra_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
         self.extra_frame.pack(fill="x", padx=20, pady=(0, 15))
-        self.extra_frame.columnconfigure(0, weight=1)
-        self.extra_frame.columnconfigure(1, weight=1)
         
         # 모션 가속도
-        self.accel_container = tk.Frame(self.extra_frame, bg=self.card_color)
-        self.accel_container.grid(row=0, column=0, padx=(0, 10), sticky="ew")
-        self.accel_label = tk.Label(self.accel_container, text=f"가속도: {int(self.config['acceleration'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.accel_label = tk.Label(self.extra_frame, text=f"가속도: {int(self.config['acceleration'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.accel_label.pack(anchor="w")
         self.accel_scale = tk.Scale(
-            self.accel_container, from_=0, to=5, resolution=1, orient="horizontal",
+            self.extra_frame, from_=0, to=5, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_accel_change
         )
         self.accel_scale.set(self.config["acceleration"])
         self.accel_scale.pack(fill="x", pady=(2, 0))
-        
-        # 내부 배율
-        self.mult_container = tk.Frame(self.extra_frame, bg=self.card_color)
-        self.mult_container.grid(row=0, column=1, padx=(10, 0), sticky="ew")
-        self.mult_label = tk.Label(self.mult_container, text=f"내부 배율: {self.config.get('internal_multiplier', 40.0):.1f}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
-        self.mult_label.pack(anchor="w")
-        self.mult_scale = tk.Scale(
-            self.mult_container, from_=0.0, to=80.0, resolution=1.0, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_mult_change
-        )
-        self.mult_scale.set(self.config.get("internal_multiplier", 40.0))
-        self.mult_scale.pack(fill="x", pady=(2, 0))
         
         # 단축키 설정 영역 프레임 (전체 너비 배치)
         self.hotkey_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
@@ -409,6 +392,8 @@ class PyViacamGUI:
         accel = int(float(val))
         self.config["acceleration"] = accel
         self.accel_label.configure(text=f"가속도: {accel}")
+        # 가속도 변경 시 필터의 accel_array를 원본 공식으로 다시 빌드
+        self.tracker.filter._build_accel_array()
         config.save_config(self.config)
 
     def on_thresh_change(self, val):
@@ -421,12 +406,6 @@ class PyViacamGUI:
         smooth = int(float(val))
         self.config["smoothing"] = smooth
         self.smooth_label.configure(text=f"스무딩: {smooth}")
-        config.save_config(self.config)
-
-    def on_mult_change(self, val):
-        mult = float(val)
-        self.config["internal_multiplier"] = mult
-        self.mult_label.configure(text=f"내부 배율: {mult:.1f}")
         config.save_config(self.config)
 
     def start_hotkey_recording(self):
