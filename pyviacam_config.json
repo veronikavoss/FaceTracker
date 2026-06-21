@@ -12,5 +12,5 @@
     "camera_backend": "MSMF",
     "camera_width": 640,
     "camera_height": 480,
-    "use_ir_camera": false
+    "use_ir_camera": true
 }

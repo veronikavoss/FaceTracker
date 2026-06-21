@@ -151,26 +151,6 @@ class WinRTIRCamera:
                                     frame_data = raw_data.reshape((h, stride))[:, :w].copy()
                                     
                                 if frame_data is not None:
-                                    # [Windows Hello IR 스트로빙 방지 및 FPS 유지]
-                                    current_mean = np.mean(frame_data)
-                                    
-                                    # 최근 밝기 최대치를 추적 (기준점)
-                                    if not hasattr(self, 'max_mean_brightness'):
-                                        self.max_mean_brightness = current_mean
-                                        
-                                    # 환경 밝기 변화에 적응하기 위해 기준점 서서히 감소
-                                    self.max_mean_brightness = max(1.0, self.max_mean_brightness * 0.995)
-                                    
-                                    if current_mean > self.max_mean_brightness:
-                                        self.max_mean_brightness = current_mean
-                                        
-                                    # 기준점의 절반 미만으로 급격히 어두워진 프레임(LED Off)은 
-                                    # 큐에 넣지 않고 완전히 건너뜁니다.
-                                    # (이전 프레임 복사본을 넣으면 optical flow가 동일 프레임을 비교하여
-                                    #  dx/dy=0이 되고 마우스가 주기적으로 멈추는 끊김 현상이 발생합니다)
-                                    if current_mean < self.max_mean_brightness * 0.5:
-                                        continue
-
                                     if self.frame_queue.full():
                                         try:
                                             self.frame_queue.get_nowait()
