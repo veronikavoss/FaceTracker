@@ -157,7 +157,6 @@ class WinRTIRCamera:
                                     # 최근 밝기 최대치를 추적 (기준점)
                                     if not hasattr(self, 'max_mean_brightness'):
                                         self.max_mean_brightness = current_mean
-                                        self.last_good_frame = frame_data.copy()
                                         
                                     # 환경 밝기 변화에 적응하기 위해 기준점 서서히 감소
                                     self.max_mean_brightness = max(1.0, self.max_mean_brightness * 0.995)
@@ -165,11 +164,12 @@ class WinRTIRCamera:
                                     if current_mean > self.max_mean_brightness:
                                         self.max_mean_brightness = current_mean
                                         
-                                    # 기준점의 절반 미만으로 급격히 어두워진 프레임(LED Off)은 이전 프레임으로 대체하여 깜빡임 제거
+                                    # 기준점의 절반 미만으로 급격히 어두워진 프레임(LED Off)은 
+                                    # 큐에 넣지 않고 완전히 건너뜁니다.
+                                    # (이전 프레임 복사본을 넣으면 optical flow가 동일 프레임을 비교하여
+                                    #  dx/dy=0이 되고 마우스가 주기적으로 멈추는 끊김 현상이 발생합니다)
                                     if current_mean < self.max_mean_brightness * 0.5:
-                                        frame_data = self.last_good_frame.copy()
-                                    else:
-                                        self.last_good_frame = frame_data.copy()
+                                        continue
 
                                     if self.frame_queue.full():
                                         try:
@@ -191,7 +191,7 @@ class WinRTIRCamera:
                                     except:
                                         pass
                     frame_reference.close()
-                await asyncio.sleep(0.002)
+                await asyncio.sleep(0.001)
         finally:
             self.is_opened = False
             try:
@@ -207,7 +207,7 @@ class WinRTIRCamera:
         if not self.running or not self.is_opened:
             return False, None
         try:
-            gray_frame = self.frame_queue.get(timeout=0.05)
+            gray_frame = self.frame_queue.get(timeout=0.005)
             # 기존 트래커 및 얼굴 검출 파이프라인(BGR 3채널 기준)과의 완벽 호환을 위한 BGR 복제 변환
             bgr_frame = cv2.cvtColor(gray_frame, cv2.COLOR_GRAY2BGR)
             return True, bgr_frame
@@ -480,11 +480,9 @@ class FaceTracker(threading.Thread):
             mean_brightness = np.mean(gray)
             
             if use_ir:
-                # IR(적외선) 모드에서는 명암비가 부족해 얼굴 검출이 매우 어렵습니다.
-                # 스트로빙 검은 프레임이 제거된 상태이므로 항상 강력한 대비 증폭(CLAHE)을 적용하여 이목구비를 뚜렷하게 만듭니다.
-                clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-                gray_enhanced = clahe.apply(gray)
-                gray = cv2.GaussianBlur(gray_enhanced, (5, 5), 0)
+                # IR(적외선) 모드: 가벼운 히스토그램 평활화로 대비 개선 (CLAHE보다 5배 빠름)
+                gray = cv2.equalizeHist(gray)
+                gray = cv2.GaussianBlur(gray, (3, 3), 0)
                 temp_deadzone_mult = 1.0
             elif mean_brightness < 60:
                 # 조도가 낮을 때만 대비를 소프트하게 향상 (clipLimit을 1.5로 완화하여 노이즈 증폭 억제)
@@ -542,7 +540,8 @@ class FaceTracker(threading.Thread):
                     realigned = False
                     if status is not None and status[0][0] == 1:
                         # 주기적인 코 끝 고정 보정 (20프레임마다 작동, 약 0.33초 주기)
-                        if self.frame_counter % 20 == 0:
+                        redetect_interval = 40 if use_ir else 20
+                        if self.frame_counter % redetect_interval == 0:
                             face = self._detect_face(gray, w, use_ir)
                             if face is not None:
                                 x, y, fw, fh = face
