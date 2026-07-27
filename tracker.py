@@ -67,9 +67,13 @@ class FaceTracker(threading.Thread):
         if self.cap and self.cap.isOpened():
             try:
                 if auto:
-                    self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3) # 3: Auto
+                    # DirectShow(0.75) 및 MSMF/V4L2(3) 백엔드 자동 노출 설정 시도
+                    self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)
+                    self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3)
                 else:
-                    self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1) # 1: Manual
+                    # DirectShow(0.25) 및 MSMF/V4L2(1) 백엔드 수동 노출 설정 시도
+                    self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)
+                    self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
                     self.cap.set(cv2.CAP_PROP_EXPOSURE, -7.0)   # 고속 노출 고정
             except Exception as e:
                 print(f"노출 제어 설정 중 에러: {e}")
@@ -138,16 +142,9 @@ class FaceTracker(threading.Thread):
         print(f"[카메라 설정 디버그] FOURCC(MJPG) 설정 결과: {results[0]} | 가로: {results[1]} | 세로: {results[2]} | FPS: {results[3]}")
         print(f"[카메라 최종 연결 완료] 해상도: {int(w)}x{int(h)} | FPS: {int(fps)} | 최종 코덱: {codec}")
 
-        # 초기 설정값 기반 노출 모드 적용
-        lock_fps = self.config.get("lock_fps_low_light", False)
-        try:
-            if lock_fps:
-                self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1) # Manual
-                self.cap.set(cv2.CAP_PROP_EXPOSURE, -7.0)   # 고속 노출 고정
-            else:
-                self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3) # Auto
-        except Exception as e:
-            print(f"초기 노출 설정 중 에러: {e}")
+        # 초기 설정값 기반 노출 모드 적용 (auto_exposure 기본값 True)
+        auto_exp = self.config.get("auto_exposure", not self.config.get("lock_fps_low_light", False))
+        self.set_auto_exposure(auto_exp)
 
         current_camera_id = camera_id
         fps_start_time = time.time()
@@ -168,15 +165,8 @@ class FaceTracker(threading.Thread):
                     w, h, fps, codec, results = apply_settings(self.cap, target_fps, target_w, target_h)
                     
                     # 노출 모드 재적용
-                    lock_fps = self.config.get("lock_fps_low_light", False)
-                    try:
-                        if lock_fps:
-                            self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
-                            self.cap.set(cv2.CAP_PROP_EXPOSURE, -7.0)
-                        else:
-                            self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3)
-                    except Exception as e:
-                        print(f"노출 설정 재적용 중 에러: {e}")
+                    auto_exp = self.config.get("auto_exposure", not self.config.get("lock_fps_low_light", False))
+                    self.set_auto_exposure(auto_exp)
                     
                     fps_start_time = time.time()
                     fps_counter = 0

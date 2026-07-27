@@ -261,10 +261,11 @@ class PyViacamGUI:
         self.fps_combo.pack(side="left", expand=True)
         self.fps_combo.bind("<<ComboboxSelected>>", self.on_res_fps_select)
         
-        # 1. 자동 노출 끄기 (FPS 고정) 체크박스
-        self.auto_exposure_var = tk.BooleanVar(value=self.config.get("lock_fps_low_light", False))
+        # 1. 자동 노출 체크박스 (기본값: True - 자동 노출 켜기)
+        auto_exp_default = self.config.get("auto_exposure", not self.config.get("lock_fps_low_light", False))
+        self.auto_exposure_var = tk.BooleanVar(value=auto_exp_default)
         self.auto_exp_chk = tk.Checkbutton(
-            self.cam_ctrl_frame, text="저조도 FPS 드롭 방지 (수동 노출 고정)", 
+            self.cam_ctrl_frame, text="카메라 자동 노출 켜기 (Auto Exposure)", 
             variable=self.auto_exposure_var, command=self.on_auto_exposure_toggle,
             bg=self.card_color, fg=self.text_color, selectcolor="#1E293B",
             activebackground=self.card_color, activeforeground=self.text_color,
@@ -485,9 +486,10 @@ class PyViacamGUI:
 
     def on_auto_exposure_toggle(self):
         val = self.auto_exposure_var.get()
-        self.config["lock_fps_low_light"] = val
+        self.config["auto_exposure"] = val
+        self.config["lock_fps_low_light"] = not val
         config.save_config(self.config)
-        self.tracker.set_auto_exposure(not val)
+        self.tracker.set_auto_exposure(val)
 
     def open_camera_settings(self):
         self.tracker.open_camera_settings()

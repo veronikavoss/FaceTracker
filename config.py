@@ -11,7 +11,8 @@ DEFAULT_CONFIG = {
     "acceleration": 2,    # 원본 Acceleration 0~5, 기본값 2
     "motion_threshold": 1,# 원본 EasyStop 0~10, 기본값 1
     "tracking_toggle_key": "f12",  # 활성/비활성 전환 키
-    "lock_fps_low_light": False,  # 저조도 FPS 드롭 방지 (자동 노출 비활성화)
+    "auto_exposure": True,        # 카메라 자동 노출 사용 여부 (기본값: True)
+    "lock_fps_low_light": False,  # 수동 고속 노출 고정 여부
     "target_fps": 90,             # 카메라 타겟 FPS 설정 (60 또는 90 등 브리오 사양 지원)
     "camera_backend": "DSHOW",    # 카메라 백엔드 API (DSHOW, MSMF, AUTO 중 선택)
     "camera_width": 640,          # 카메라 해상도 가로 (CPU 절약을 위해 640 권장)

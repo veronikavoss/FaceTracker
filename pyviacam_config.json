@@ -6,6 +6,7 @@
     "acceleration": 5,
     "motion_threshold": 2,
     "tracking_toggle_key": "f12",
+    "auto_exposure": true,
     "lock_fps_low_light": false,
     "target_fps": 30,
     "camera_backend": "DSHOW",
