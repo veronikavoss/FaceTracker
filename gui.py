@@ -3,13 +3,13 @@ from tkinter import ttk
 import cv2
 from PIL import Image, ImageTk
 import config
-from tracker import WINRT_AVAILABLE
 
 class PyViacamGUI:
-    def __init__(self, root, app_config, tracker):
+    def __init__(self, root, app_config, tracker, frame_queue):
         self.root = root
         self.config = app_config
         self.tracker = tracker
+        self.frame_queue = frame_queue
         
         # 윈도우 타이틀 및 크기 설정
         self.root.title("PyViacam Lite - Head Tracking Mouse")
@@ -44,7 +44,6 @@ class PyViacamGUI:
         
         self.photo = None
         self.image_id = None
-        self.update_pending = False
 
     def _init_camera_panel(self):
         # 카메라 패널 프레임 (Card 스타일)
@@ -273,20 +272,7 @@ class PyViacamGUI:
         )
         self.auto_exp_chk.pack(anchor="w", pady=(0, 8))
         
-        # 1-2. 적외선(IR) 카메라 모드 토글 체크박스
-        self.ir_mode_var = tk.BooleanVar(value=self.config.get("use_ir_camera", False))
-        ir_state = tk.NORMAL if WINRT_AVAILABLE else tk.DISABLED
-        ir_text = "Logitech Brio 적외선(IR) 모드 활성화" if WINRT_AVAILABLE else "Logitech Brio 적외선(IR) 모드 (Windows/WinRT 전용)"
-        self.ir_mode_chk = tk.Checkbutton(
-            self.cam_ctrl_frame, text=ir_text, 
-            variable=self.ir_mode_var, command=self.on_ir_mode_toggle,
-            state=ir_state,
-            bg=self.card_color, fg=self.text_color if WINRT_AVAILABLE else self.muted_color, selectcolor="#1E293B",
-            activebackground=self.card_color, activeforeground=self.text_color,
-            font=("Segoe UI", 9), bd=0, highlightthickness=0
-        )
-        self.ir_mode_chk.pack(anchor="w", pady=(0, 8))
-        
+
         # 2. 카메라 설정 다이얼로그 호출 버튼
         self.cam_settings_btn = tk.Button(
             self.cam_ctrl_frame, text="📷 카메라 고급 설정 창 열기", font=("Segoe UI", 9, "bold"),
@@ -319,6 +305,36 @@ class PyViacamGUI:
         self.help_lbl = tk.Label(help_frame, text=help_text, justify="left", font=("Segoe UI", 9), fg=self.muted_color, bg="#0F172A", anchor="nw", padx=10, pady=10)
         self.help_lbl.pack(fill="both", expand=True)
 
+    def start_poll_loop(self):
+        """
+        메인 스레드에서 주기적으로 프레임 대기열(Queue)을 감시하는 루프를 시작합니다.
+        """
+        self.poll_frame_queue()
+
+    def poll_frame_queue(self):
+        """
+        큐에서 최신 데이터를 가져와 GUI를 업데이트합니다.
+        이 함수는 스레드 경합 없이 전적으로 메인 GUI 스레드에서만 실행됩니다.
+        """
+        try:
+            latest_data = None
+            # 큐에 여러 프레임이 쌓였을 경우, 가장 최신 프레임만 남기고 비워내어 지연(Latency) 방지
+            while not self.frame_queue.empty():
+                try:
+                    latest_data = self.frame_queue.get_nowait()
+                except Exception:
+                    break
+            
+            if latest_data is not None:
+                frame, tracking_enabled, nose_x, nose_y, fps, w, h = latest_data
+                self.update_frame(frame, tracking_enabled, nose_x, nose_y, fps, w, h)
+        except Exception as e:
+            print(f"[GUI] 폴링 루프 에러: {e}")
+        finally:
+            # 약 15ms(약 60fps에 해당) 간격으로 다시 감시 실행
+            if self.root.winfo_exists():
+                self.root.after(15, self.poll_frame_queue)
+
     def update_frame(self, cv_frame, tracking_enabled, nose_x, nose_y, fps, w, h):
         """
         카메라 스레드로부터 실시간 프레임을 전달받아 GUI에 렌더링합니다.
@@ -341,12 +357,9 @@ class PyViacamGUI:
         rgb_image = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(rgb_image)
         
-        # Tkinter PhotoImage 재사용 (메모리 누수 원천 방지)
-        if getattr(self, "photo", None) is None or self.photo.width() != display_w or self.photo.height() != display_h:
-            self.photo = ImageTk.PhotoImage(image=pil_img)
-            self.image_id = None
-        else:
-            self.photo.paste(pil_img)
+        # Tkinter PhotoImage 안전 생성 (이전 참조를 끊어 Tcl/Tk 네이티브 이미지 해제)
+        # paste()의 메모리 누수 버그를 차단하기 위해 매번 PhotoImage를 생성하는 방식 채택
+        self.photo = ImageTk.PhotoImage(image=pil_img)
         
         # 캔버스에 이미지 업데이트
         if self.image_id is None:
@@ -365,9 +378,6 @@ class PyViacamGUI:
             self.cam_frame.configure(highlightbackground="#334155")
             self.status_label.configure(text=f"비활성 상태 ({hotkey}키로 활성화)", fg=self.inactive_color)
             self.toggle_btn.configure(bg=self.accent_color, text=f"추적 시작 ({hotkey})")
-            
-        # 렌더링이 완전히 끝난 후 다음 프레임을 받을 수 있도록 락 해제
-        self.update_pending = False
 
     def manual_toggle(self):
         """
@@ -478,12 +488,6 @@ class PyViacamGUI:
         self.config["lock_fps_low_light"] = val
         config.save_config(self.config)
         self.tracker.set_auto_exposure(not val)
-
-    def on_ir_mode_toggle(self):
-        val = self.ir_mode_var.get()
-        self.config["use_ir_camera"] = val
-        config.save_config(self.config)
-        print(f"[GUI] 적외선(IR) 모드 설정이 변경되었습니다: {val}")
 
     def open_camera_settings(self):
         self.tracker.open_camera_settings()

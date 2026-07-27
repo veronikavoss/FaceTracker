@@ -16,7 +16,6 @@ DEFAULT_CONFIG = {
     "camera_backend": "DSHOW",    # 카메라 백엔드 API (DSHOW, MSMF, AUTO 중 선택)
     "camera_width": 640,          # 카메라 해상도 가로 (CPU 절약을 위해 640 권장)
     "camera_height": 360,         # 카메라 해상도 세로 (16:9 비율 유지)
-    "use_ir_camera": False,       # Logitech Brio 등 Windows Hello 적외선(IR) 카메라 활성화 여부
 }
 
 def load_config():

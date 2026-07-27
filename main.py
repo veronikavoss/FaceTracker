@@ -2,6 +2,7 @@ import os
 # MSMF 카메라 초기화 속도 대폭 단축을 위한 하드웨어 트랜스폼 비활성화
 os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
 
+import queue
 import tkinter as tk
 from pynput import keyboard
 from pynput.mouse import Controller
@@ -42,14 +43,19 @@ def main():
     # Tkinter 루트 윈도우 생성
     root = tk.Tk()
     
+    # 스레드 간 비디오 프레임 전달을 위한 스레드 안전한 큐 생성 (오버플로우 방지를 위해 크기 2로 제한)
+    frame_queue = queue.Queue(maxsize=2)
+    
     # 2. 콜백 함수 정의 (스레드 세이프 보장)
     def on_frame_callback(frame, tracking_enabled, nose_x, nose_y, fps, w, h):
-        # 트래커(서브 스레드)에서 GUI(메인 스레드)로 안전하게 그래픽 업데이트 전달
+        # 서브 스레드에서 직접 GUI(메인 스레드)에 접근하지 않고 큐에 데이터 전달
         try:
-            # GUI 스레드 과부하로 인한 대기열 누적(TclError/MemoryError) 방지를 위한 프레임 드롭
-            if root.winfo_exists() and not gui.update_pending:
-                gui.update_pending = True
-                root.after_idle(gui.update_frame, frame, tracking_enabled, nose_x, nose_y, fps, w, h)
+            if frame_queue.full():
+                try:
+                    frame_queue.get_nowait()
+                except queue.Empty:
+                    pass
+            frame_queue.put_nowait((frame, tracking_enabled, nose_x, nose_y, fps, w, h))
         except Exception:
             pass
 
@@ -68,7 +74,10 @@ def main():
     )
     
     # 4. GUI 초기화
-    gui = PyViacamGUI(root, app_config, tracker)
+    gui = PyViacamGUI(root, app_config, tracker, frame_queue)
+    
+    # GUI 측 프레임 큐 폴링 루프 개시
+    gui.start_poll_loop()
     
     # 5. 전역 핫키 감지 리스너 등록
     def on_key_press(key):
