@@ -66,14 +66,24 @@ class FaceTracker(threading.Thread):
     def set_auto_exposure(self, auto):
         if self.cap and self.cap.isOpened():
             try:
+                backend_str = self.config.get("camera_backend", "DSHOW").upper()
                 if auto:
-                    # DirectShow(0.75) 및 MSMF/V4L2(3) 백엔드 자동 노출 설정 시도
-                    self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)
-                    self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3)
+                    print("[카메라 노출 설정] 자동 노출(Auto Exposure)을 켭니다.")
+                    if backend_str == "DSHOW":
+                        # DirectShow 백엔드: 0.75가 Auto Exposure 표준입니다.
+                        r = self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)
+                        if not r:
+                            self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
+                    else:
+                        r = self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3)
+                        if not r:
+                            self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)
                 else:
-                    # DirectShow(0.25) 및 MSMF/V4L2(1) 백엔드 수동 노출 설정 시도
-                    self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)
-                    self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
+                    print("[카메라 노출 설정] 수동 노출(Manual Exposure)로 고정합니다.")
+                    if backend_str == "DSHOW":
+                        self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)
+                    else:
+                        self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
                     self.cap.set(cv2.CAP_PROP_EXPOSURE, -7.0)   # 고속 노출 고정
             except Exception as e:
                 print(f"노출 제어 설정 중 에러: {e}")
