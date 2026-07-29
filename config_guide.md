@@ -1,6 +1,6 @@
-# PyViacam Lite 설정 가이드 (Configuration Settings Guide)
+# Face Tracker 설정 가이드 (Configuration Settings Guide)
 
-이 문서는 PyViacam Lite 프로그램의 GUI 제어판과 설정 파일(`pyviacam_config.json`) 내 다양한 설정 요소들의 역할, 내부 동작 방식, 그리고 최적의 설정을 맞추기 위한 추천 값을 다룹니다.
+이 문서는 Face Tracker 프로그램의 GUI 제어판과 설정 파일(`facetracker_config.json`) 내 다양한 설정 요소들의 역할, 내부 동작 방식, 그리고 최적의 설정을 맞추기 위한 추천 값을 다룹니다.
 
 ---
 

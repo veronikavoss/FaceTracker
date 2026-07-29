@@ -8,7 +8,7 @@ from pynput import keyboard
 from pynput.mouse import Controller
 import config
 from tracker import FaceTracker
-from gui import PyViacamGUI
+from gui import FaceTrackerGUI
 
 class FractionalMouseController:
     """
@@ -74,7 +74,7 @@ def main():
     )
     
     # 4. GUI 초기화
-    gui = PyViacamGUI(root, app_config, tracker, frame_queue)
+    gui = FaceTrackerGUI(root, app_config, tracker, frame_queue)
     
     # GUI 측 프레임 큐 폴링 루프 개시
     gui.start_poll_loop()

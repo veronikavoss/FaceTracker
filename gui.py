@@ -4,7 +4,7 @@ import cv2
 from PIL import Image, ImageTk
 import config
 
-class PyViacamGUI:
+class FaceTrackerGUI:
     def __init__(self, root, app_config, tracker, frame_queue):
         self.root = root
         self.config = app_config
@@ -12,7 +12,7 @@ class PyViacamGUI:
         self.frame_queue = frame_queue
         
         # 윈도우 타이틀 및 크기 설정
-        self.root.title("PyViacam Lite - Head Tracking Mouse")
+        self.root.title("Face Tracker")
         self.root.geometry("1000x600")
         self.root.resizable(False, False)
         
@@ -75,7 +75,7 @@ class PyViacamGUI:
         self.ctrl_frame.grid(row=0, column=1, padx=(0, 20), pady=20, sticky="nsew")
         
         # 프로그램 이름 및 상태 헤더
-        header_label = tk.Label(self.ctrl_frame, text="PyViacam Lite", font=("Outfit", 20, "bold"), fg=self.text_color, bg=self.card_color)
+        header_label = tk.Label(self.ctrl_frame, text="Face Tracker", font=("Outfit", 20, "bold"), fg=self.text_color, bg=self.card_color)
         header_label.pack(anchor="w", padx=20, pady=(20, 5))
         
         self.status_label = tk.Label(self.ctrl_frame, text="비활성 상태 (F12키로 활성화)", font=("Inter", 10, "bold"), fg=self.inactive_color, bg=self.card_color)

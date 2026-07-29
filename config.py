@@ -1,7 +1,7 @@
 import json
 import os
 
-CONFIG_FILE = "pyviacam_config.json"
+CONFIG_FILE = "facetracker_config.json"
 
 DEFAULT_CONFIG = {
     "camera_id": 0,
