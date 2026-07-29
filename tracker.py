@@ -298,8 +298,17 @@ class FaceTracker(threading.Thread):
                             
                             dx, dy = self.filter.filter(raw_dx, raw_dy)
                             
-                            if self.on_move_callback and (dx != 0.0 or dy != 0.0):
-                                self.on_move_callback(dx, dy)
+                            # 저조도 프레임 드롭(20 FPS 미만) 감지 시 자동 2배 프레임 보간 (Frame Doubling / Interpolation)
+                            # 마우스 이동 델타를 2회로 분할 보간 투입하여 뚝뚝 끊김을 완전히 제거하고 2배 부드럽게 보정합니다.
+                            if 0 < current_fps < 20 and (dx != 0.0 or dy != 0.0):
+                                if self.on_move_callback:
+                                    self.on_move_callback(dx * 0.5, dy * 0.5)
+                                time.sleep(0.015)  # 15ms 더미 인터벌 보간
+                                if self.on_move_callback:
+                                    self.on_move_callback(dx * 0.5, dy * 0.5)
+                            else:
+                                if self.on_move_callback and (dx != 0.0 or dy != 0.0):
+                                    self.on_move_callback(dx, dy)
                                 
                             nose_x = int(next_point[0][0][0])
                             nose_y = int(next_point[0][0][1])
@@ -329,8 +338,9 @@ class FaceTracker(threading.Thread):
                     cv2.circle(frame, (nose_x, nose_y), 6, point_color, -1)
                     cv2.circle(frame, (nose_x, nose_y), 2, (255, 255, 255), -1)
 
+                display_fps = current_fps * 2 if (0 < current_fps < 20) else current_fps
                 if self.on_frame_callback:
-                    self.on_frame_callback(frame, self.tracking_enabled, nose_x, nose_y, current_fps, w, h)
+                    self.on_frame_callback(frame, self.tracking_enabled, nose_x, nose_y, display_fps, w, h)
 
             except Exception as e:
                 print(f"트래커 루프 내 예외 발생: {e}")

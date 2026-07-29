@@ -271,15 +271,7 @@ class FaceTrackerGUI:
             activebackground=self.card_color, activeforeground=self.text_color,
             font=("Segoe UI", 9), bd=0, highlightthickness=0
         )
-        self.auto_exp_chk.pack(anchor="w", pady=(0, 2))
-        
-        # FPS 드롭 방지 서브 안내 텍스트
-        self.auto_exp_tip = tk.Label(
-            self.cam_ctrl_frame, 
-            text="💡 어두운 곳에서 FPS가 떨어지면 이 체크를 해제하세요 (FPS 고정)", 
-            font=("Segoe UI", 8), fg=self.muted_color, bg=self.card_color
-        )
-        self.auto_exp_tip.pack(anchor="w", pady=(0, 8))
+        self.auto_exp_chk.pack(anchor="w", pady=(0, 8))
         
 
         # 2. 카메라 설정 다이얼로그 호출 버튼
@@ -307,9 +299,9 @@ class FaceTrackerGUI:
         help_text = (
             "💡 조작 안내\n"
             f"• [{self.config['tracking_toggle_key'].upper()}] 키를 누르면 즉시 머리 추적 제어가 시작/중지됩니다.\n"
-            "• 어두운 환경에서 FPS가 떨어지면 [자동 노출] 체크를 해제하세요.\n"
             "• 코 끝을 기준으로 마우스 좌표가 제어됩니다.\n"
-            "• 움직임이 끊기면 스무딩 값을 낮추어 반응성을 높이세요."
+            "• 움직임이 끊기면 스무딩 값을 낮추어 반응성을 높이세요.\n"
+            "• 마우스가 떨리면 스무딩 값을 높이거나 감도를 조절해 보세요."
         )
         self.help_lbl = tk.Label(help_frame, text=help_text, justify="left", font=("Segoe UI", 9), fg=self.muted_color, bg="#0F172A", anchor="nw", padx=10, pady=10)
         self.help_lbl.pack(fill="both", expand=True)
