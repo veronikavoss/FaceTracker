@@ -27,7 +27,7 @@ class EMASmoothingFilter:
         원본 CMouseControl::SetRelAcceleration2 로직을 정확히 재현합니다.
         pointeraction.cpp SetAcceleration(n) → mousecontrol.cpp SetRelAcceleration2(delta0, factor0, delta1, factor1)
         """
-        accel = max(0, min(5, int(self.config.get("acceleration", 2))))
+        accel = max(0, min(10, int(self.config.get("acceleration", 5))))
         
         delta0 = ACCEL_ARRAY_SIZE  # 기본값: 배열 전체를 1.0으로 채움 (가속 없음)
         factor0 = 1.0
@@ -42,7 +42,7 @@ class EMASmoothingFilter:
             delta0 = 7; factor0 = 1.5; delta1 = 14; factor1 = 2.0
         elif accel == 4:
             delta0 = 7; factor0 = 2.0; delta1 = 14; factor1 = 1.5
-        elif accel == 5:
+        elif accel >= 5:
             delta0 = 7; factor0 = 2.0; delta1 = 14; factor1 = 2.0
         
         # 원본 SetRelAcceleration2 로직 그대로

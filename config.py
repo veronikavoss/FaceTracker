@@ -5,18 +5,18 @@ CONFIG_FILE = "pyviacam_config.json"
 
 DEFAULT_CONFIG = {
     "camera_id": 0,
-    "sensitivity_x": 10,  # 원본 xSpeed 0~30, 기본값 10
-    "sensitivity_y": 10,  # 원본 ySpeed 0~30, 기본값 10
-    "smoothing": 2,       # 원본 Smoothness 0~8, 기본값 2
-    "acceleration": 2,    # 원본 Acceleration 0~5, 기본값 2
-    "motion_threshold": 1,# 원본 EasyStop 0~10, 기본값 1
+    "sensitivity_x": 25,  # 기본값 25 (슬라이더 범위 0~50 중앙)
+    "sensitivity_y": 25,  # 기본값 25 (슬라이더 범위 0~50 중앙)
+    "smoothing": 3,       # 기본값 3  (슬라이더 범위 0~6 중앙)
+    "acceleration": 5,    # 기본값 5  (슬라이더 범위 0~10 중앙)
+    "motion_threshold": 2,# 기본값 2  (슬라이더 범위 0~4 중앙)
     "tracking_toggle_key": "f12",  # 활성/비활성 전환 키
     "auto_exposure": True,        # 카메라 자동 노출 사용 여부 (기본값: True)
     "lock_fps_low_light": False,  # 수동 고속 노출 고정 여부
-    "target_fps": 90,             # 카메라 타겟 FPS 설정 (60 또는 90 등 브리오 사양 지원)
+    "target_fps": 30,             # 카메라 타겟 FPS 설정
     "camera_backend": "DSHOW",    # 카메라 백엔드 API (DSHOW, MSMF, AUTO 중 선택)
-    "camera_width": 640,          # 카메라 해상도 가로 (CPU 절약을 위해 640 권장)
-    "camera_height": 360,         # 카메라 해상도 세로 (16:9 비율 유지)
+    "camera_width": 640,          # 카메라 해상도 가로
+    "camera_height": 480,         # 카메라 해상도 세로
 }
 
 def load_config():

@@ -97,7 +97,7 @@ class PyViacamGUI:
         self.sens_x_label = tk.Label(self.sens_x_container, text=f"민감도 X: {int(self.config['sensitivity_x'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.sens_x_label.pack(anchor="w")
         self.sens_x_scale = tk.Scale(
-            self.sens_x_container, from_=0, to=30, resolution=1, orient="horizontal",
+            self.sens_x_container, from_=0, to=50, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_sens_x_change
         )
@@ -110,7 +110,7 @@ class PyViacamGUI:
         self.sens_y_label = tk.Label(self.sens_y_container, text=f"민감도 Y: {int(self.config['sensitivity_y'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.sens_y_label.pack(anchor="w")
         self.sens_y_scale = tk.Scale(
-            self.sens_y_container, from_=0, to=30, resolution=1, orient="horizontal",
+            self.sens_y_container, from_=0, to=50, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_sens_y_change
         )
@@ -129,7 +129,7 @@ class PyViacamGUI:
         self.thresh_label = tk.Label(self.thresh_container, text=f"임계값: {int(self.config['motion_threshold'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.thresh_label.pack(anchor="w")
         self.thresh_scale = tk.Scale(
-            self.thresh_container, from_=0, to=10, resolution=1, orient="horizontal",
+            self.thresh_container, from_=0, to=4, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_thresh_change
         )
@@ -142,7 +142,7 @@ class PyViacamGUI:
         self.smooth_label = tk.Label(self.smooth_container, text=f"스무딩: {int(self.config['smoothing'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.smooth_label.pack(anchor="w")
         self.smooth_scale = tk.Scale(
-            self.smooth_container, from_=0, to=8, resolution=1, orient="horizontal",
+            self.smooth_container, from_=0, to=6, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_smooth_change
         )
@@ -157,7 +157,7 @@ class PyViacamGUI:
         self.accel_label = tk.Label(self.extra_frame, text=f"가속도: {int(self.config['acceleration'])}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
         self.accel_label.pack(anchor="w")
         self.accel_scale = tk.Scale(
-            self.extra_frame, from_=0, to=5, resolution=1, orient="horizontal",
+            self.extra_frame, from_=0, to=10, resolution=1, orient="horizontal",
             bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
             highlightthickness=0, bd=0, showvalue=False, command=self.on_accel_change
         )
