@@ -29,6 +29,10 @@ class FaceTracker(threading.Thread):
         # 스무딩 필터 초기화
         self.filter = EMASmoothingFilter(self.config)
         
+        # 3. 저조도 어둠 극복용 감마 룩업 테이블(Gamma 2.2 LUT) 사전 구성 (0ms 연산)
+        inv_gamma = 1.0 / 2.2
+        self.gamma_lut = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+        
         # 트래킹 관련 상태 변수
         self.prev_gray = None
         self.track_point = None  # 추적 중인 코 끝 특징점
@@ -88,14 +92,15 @@ class FaceTracker(threading.Thread):
             except Exception as e:
                 print(f"노출 제어 설정 중 에러: {e}")
 
-    def _detect_face(self, gray, w):
+    def _detect_face(self, gray, w, is_low_light=False):
         scale = 320.0 / w if w > 320 else 1.0
         h_small = int(gray.shape[0] * scale)
         w_small = int(gray.shape[1] * scale)
         gray_small = cv2.resize(gray, (w_small, h_small))
         
         min_size = int(w_small * 0.12)
-        faces = self.face_cascade.detectMultiScale(gray_small, scaleFactor=1.1, minNeighbors=4, minSize=(min_size, min_size))
+        min_neighbors = 2 if is_low_light else 4
+        faces = self.face_cascade.detectMultiScale(gray_small, scaleFactor=1.1, minNeighbors=min_neighbors, minSize=(min_size, min_size))
         
         if len(faces) > 0:
             x_s, y_s, fw_s, fh_s = max(faces, key=lambda f: f[2] * f[3])
@@ -207,12 +212,20 @@ class FaceTracker(threading.Thread):
                 # 그레이스케일 변환
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 
-                # 저조도 전처리
+                # 저조도(어두운 환경) 디지털 광량 증폭 & 감마 2.2 이목구비 재구성
                 mean_brightness = np.mean(gray)
-                if mean_brightness < 60:
-                    clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
-                    gray_enhanced = clahe.apply(gray)
-                    gray = cv2.GaussianBlur(gray_enhanced, (5, 5), 0)
+                is_low_light = mean_brightness < 70
+                
+                if is_low_light:
+                    # 1. 감마 2.2 LUT 적용으로 암부 광량 디지털 증폭
+                    gray_bright = cv2.LUT(gray, self.gamma_lut)
+                    # 2. CLAHE 이목구비 음영 명암 부각
+                    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                    gray_enhanced = clahe.apply(gray_bright)
+                    gray = cv2.GaussianBlur(gray_enhanced, (3, 3), 0)
+                    
+                    # 3. 디스플레이 비디오 화면도 부드럽게 밝기 보정
+                    frame = cv2.LUT(frame, self.gamma_lut)
                 else:
                     gray = cv2.GaussianBlur(gray, (3, 3), 0)
                 
@@ -222,7 +235,7 @@ class FaceTracker(threading.Thread):
                 # 3. 실시간 트래킹 알고리즘
                 if self.tracking_enabled:
                     if self.track_point is None or self.prev_gray is None:
-                        face = self._detect_face(gray, w)
+                        face = self._detect_face(gray, w, is_low_light)
                         
                         if face is not None:
                             x, y, fw, fh = face
@@ -255,7 +268,7 @@ class FaceTracker(threading.Thread):
                         realigned = False
                         if status is not None and status[0][0] == 1:
                             if self.frame_counter % 20 == 0:
-                                face = self._detect_face(gray, w)
+                                face = self._detect_face(gray, w, is_low_light)
                                 if face is not None:
                                     x, y, fw, fh = face
                                     if self.face_rect_smooth is None:
@@ -318,7 +331,7 @@ class FaceTracker(threading.Thread):
                         else:
                             self.reset_tracking_state()
                 else:
-                    face = self._detect_face(gray, w)
+                    face = self._detect_face(gray, w, is_low_light)
                     if face is not None:
                         x, y, fw, fh = face
                         self.face_rect = (x, y, fw, fh)
