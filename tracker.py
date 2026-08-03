@@ -212,20 +212,15 @@ class FaceTracker(threading.Thread):
                 # 그레이스케일 변환
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 
-                # 저조도(어두운 환경) 디지털 광량 증폭 & 감마 2.2 이목구비 재구성
+                # 고화질 비디오 원본 화질 보존 & 저조도 트래킹 명암 최적화
                 mean_brightness = np.mean(gray)
-                is_low_light = mean_brightness < 70
+                is_low_light = mean_brightness < 60
                 
                 if is_low_light:
-                    # 1. 감마 2.2 LUT 적용으로 암부 광량 디지털 증폭
-                    gray_bright = cv2.LUT(gray, self.gamma_lut)
-                    # 2. CLAHE 이목구비 음영 명암 부각
-                    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-                    gray_enhanced = clahe.apply(gray_bright)
+                    # 내부 트래킹용 그레이스케일만 노이즈 없이 명암 대비 조정
+                    clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
+                    gray_enhanced = clahe.apply(gray)
                     gray = cv2.GaussianBlur(gray_enhanced, (3, 3), 0)
-                    
-                    # 3. 디스플레이 비디오 화면도 부드럽게 밝기 보정
-                    frame = cv2.LUT(frame, self.gamma_lut)
                 else:
                     gray = cv2.GaussianBlur(gray, (3, 3), 0)
                 
