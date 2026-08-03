@@ -11,8 +11,8 @@ DEFAULT_CONFIG = {
     "acceleration": 5,    # 기본값 5  (슬라이더 범위 0~10 중앙)
     "motion_threshold": 2,# 기본값 2  (슬라이더 범위 0~4 중앙)
     "tracking_toggle_key": "f12",  # 활성/비활성 전환 키
-    "auto_exposure": True,        # 카메라 자동 노출 사용 여부 (기본값: True)
-    "lock_fps_low_light": False,  # 수동 고속 노출 고정 여부
+    "auto_exposure": False,       # 수동 고속 노출 고정 (어두운 곳에서도 FPS 드롭 완전 방지)
+    "lock_fps_low_light": True,   # 저조도 FPS 고정 활성화
     "target_fps": 30,             # 카메라 타겟 FPS 설정
     "camera_backend": "DSHOW",    # 카메라 백엔드 API (DSHOW, MSMF, AUTO 중 선택)
     "camera_width": 640,          # 카메라 해상도 가로
