@@ -38,6 +38,7 @@ class FaceTracker(threading.Thread):
         self.track_point = None  # 추적 중인 코 끝 특징점
         self.face_rect = None    # 시각화용 얼굴 영역
         self.face_rect_smooth = None  # 얼굴 바운딩 박스 흔들림 보정용 스무더
+        self.prev_brightness = None   # 조명/모니터 빛 급변 감지용 밝기 기록
         self.frame_counter = 0   # 프레임 수 세는 카운터
         
         self.cap = None
@@ -59,6 +60,7 @@ class FaceTracker(threading.Thread):
         self.track_point = None
         self.prev_gray = None
         self.face_rect = None
+        self.prev_brightness = None
         self.filter.reset()
 
     def update_filter_alpha(self, alpha):
@@ -212,9 +214,17 @@ class FaceTracker(threading.Thread):
                 # 그레이스케일 변환
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 
-                # 고화질 비디오 원본 화질 보존 & 저조도 트래킹 명암 최적화
+                # 모니터 화면 빛/조명 급변(Illumination Shock) 감지 및 튐 억제
                 mean_brightness = np.mean(gray)
                 is_low_light = mean_brightness < 60
+                
+                illumination_shock = False
+                if self.prev_brightness is not None:
+                    brightness_diff = abs(mean_brightness - self.prev_brightness)
+                    # 프레임 간 평균 밝기가 10.0 이상 순간적으로 급변하면 광량 튐(Shock)으로 감지
+                    if brightness_diff > 10.0:
+                        illumination_shock = True
+                self.prev_brightness = mean_brightness
                 
                 if is_low_light:
                     # 내부 트래킹용 그레이스케일만 노이즈 없이 명암 대비 조정
@@ -296,13 +306,19 @@ class FaceTracker(threading.Thread):
                                             next_point = corners
                                             realigned = True
                                             
-                            if realigned:
+                            if realigned or illumination_shock:
                                 raw_dx = 0.0
                                 raw_dy = 0.0
                                 self.filter.reset()
                             else:
                                 raw_dx = next_point[0][0][0] - current_point[0][0][0]
                                 raw_dy = next_point[0][0][1] - current_point[0][0][1]
+                                
+                                # 순간 광량 반사 튐 스파이크(Spike Noise > 15.0px) 차단
+                                if abs(raw_dx) > 15.0 or abs(raw_dy) > 15.0:
+                                    raw_dx = 0.0
+                                    raw_dy = 0.0
+                                    self.filter.reset()
                             
                             dx, dy = self.filter.filter(raw_dx, raw_dy)
                             
