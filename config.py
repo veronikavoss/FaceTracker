@@ -17,6 +17,8 @@ DEFAULT_CONFIG = {
     "camera_backend": "DSHOW",    # 카메라 백엔드 API (DSHOW, MSMF, AUTO 중 선택)
     "camera_width": 640,          # 카메라 해상도 가로
     "camera_height": 480,         # 카메라 해상도 세로
+    "illumination_threshold": 10.0, # 광량 급변 방지 임계값 (기본 10.0)
+    "spike_threshold": 15.0,      # 비정상 튐 스파이크 억제 임계값 (기본 15.0)
 }
 
 def load_config():

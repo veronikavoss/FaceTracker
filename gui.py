@@ -162,7 +162,41 @@ class FaceTrackerGUI:
             highlightthickness=0, bd=0, showvalue=False, command=self.on_accel_change
         )
         self.accel_scale.set(self.config["acceleration"])
-        self.accel_scale.pack(fill="x", pady=(2, 0))
+        self.accel_scale.pack(fill="x", pady=(2, 10))
+        
+        # 광량 급변 감지 민감도 & 비정상 튐 억제 슬라이더 프레임 (2열 배치)
+        self.shock_frame = tk.Frame(self.extra_frame, bg=self.card_color)
+        self.shock_frame.pack(fill="x")
+        self.shock_frame.columnconfigure(0, weight=1)
+        self.shock_frame.columnconfigure(1, weight=1)
+        
+        # 1. 광량 급변 감지
+        self.illum_container = tk.Frame(self.shock_frame, bg=self.card_color)
+        self.illum_container.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+        init_illum = float(self.config.get("illumination_threshold", 10.0))
+        self.illum_label = tk.Label(self.illum_container, text=f"광량 감지: {init_illum}", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.illum_label.pack(anchor="w")
+        self.illum_scale = tk.Scale(
+            self.illum_container, from_=1.0, to=30.0, resolution=0.5, orient="horizontal",
+            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
+            highlightthickness=0, bd=0, showvalue=False, command=self.on_illum_change
+        )
+        self.illum_scale.set(init_illum)
+        self.illum_scale.pack(fill="x", pady=(2, 0))
+        
+        # 2. 비정상 튐 억제
+        self.spike_container = tk.Frame(self.shock_frame, bg=self.card_color)
+        self.spike_container.grid(row=0, column=1, padx=(5, 0), sticky="ew")
+        init_spike = float(self.config.get("spike_threshold", 15.0))
+        self.spike_label = tk.Label(self.spike_container, text=f"튐 억제: {init_spike}px", font=("Inter", 9), fg=self.text_color, bg=self.card_color)
+        self.spike_label.pack(anchor="w")
+        self.spike_scale = tk.Scale(
+            self.spike_container, from_=5.0, to=50.0, resolution=1.0, orient="horizontal",
+            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
+            highlightthickness=0, bd=0, showvalue=False, command=self.on_spike_change
+        )
+        self.spike_scale.set(init_spike)
+        self.spike_scale.pack(fill="x", pady=(2, 0))
         
         # 단축키 설정 영역 프레임 (전체 너비 배치)
         self.hotkey_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
@@ -417,6 +451,20 @@ class FaceTrackerGUI:
         smooth = int(float(val))
         self.config["smoothing"] = smooth
         self.smooth_label.configure(text=f"스무딩: {smooth}")
+        config.save_config(self.config)
+
+    def on_illum_change(self, val):
+        illum = round(float(val), 1)
+        self.config["illumination_threshold"] = illum
+        self.illum_label.configure(text=f"광량 감지: {illum}")
+        self.tracker.update_illumination_threshold(illum)
+        config.save_config(self.config)
+
+    def on_spike_change(self, val):
+        spike = round(float(val), 1)
+        self.config["spike_threshold"] = spike
+        self.spike_label.configure(text=f"튐 억제: {spike}px")
+        self.tracker.update_spike_threshold(spike)
         config.save_config(self.config)
 
     def start_hotkey_recording(self):

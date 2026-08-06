@@ -39,6 +39,8 @@ class FaceTracker(threading.Thread):
         self.face_rect = None    # 시각화용 얼굴 영역
         self.face_rect_smooth = None  # 얼굴 바운딩 박스 흔들림 보정용 스무더
         self.prev_brightness = None   # 조명/모니터 빛 급변 감지용 밝기 기록
+        self.illumination_threshold = float(self.config.get("illumination_threshold", 10.0))
+        self.spike_threshold = float(self.config.get("spike_threshold", 15.0))
         self.frame_counter = 0   # 프레임 수 세는 카운터
         
         self.cap = None
@@ -68,6 +70,12 @@ class FaceTracker(threading.Thread):
 
     def update_deadzone(self, deadzone):
         self.filter.update_deadzone(deadzone)
+
+    def update_illumination_threshold(self, val):
+        self.illumination_threshold = float(val)
+
+    def update_spike_threshold(self, val):
+        self.spike_threshold = float(val)
 
     def set_auto_exposure(self, auto):
         if self.cap and self.cap.isOpened():
@@ -221,8 +229,8 @@ class FaceTracker(threading.Thread):
                 illumination_shock = False
                 if self.prev_brightness is not None:
                     brightness_diff = abs(mean_brightness - self.prev_brightness)
-                    # 프레임 간 평균 밝기가 10.0 이상 순간적으로 급변하면 광량 튐(Shock)으로 감지
-                    if brightness_diff > 10.0:
+                    # 프레임 간 평균 밝기가 설정된 임계값 이상 순간적으로 급변하면 광량 튐(Shock)으로 감지
+                    if brightness_diff > self.illumination_threshold:
                         illumination_shock = True
                 self.prev_brightness = mean_brightness
                 
@@ -314,8 +322,8 @@ class FaceTracker(threading.Thread):
                                 raw_dx = next_point[0][0][0] - current_point[0][0][0]
                                 raw_dy = next_point[0][0][1] - current_point[0][0][1]
                                 
-                                # 순간 광량 반사 튐 스파이크(Spike Noise > 15.0px) 차단
-                                if abs(raw_dx) > 15.0 or abs(raw_dy) > 15.0:
+                                # 순간 광량 반사 튐 스파이크(설정된 임계값 px 이상) 차단
+                                if abs(raw_dx) > self.spike_threshold or abs(raw_dy) > self.spike_threshold:
                                     raw_dx = 0.0
                                     raw_dy = 0.0
                                     self.filter.reset()
