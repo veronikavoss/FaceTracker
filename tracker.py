@@ -15,9 +15,24 @@ class FaceTracker(threading.Thread):
         self.running = False
         self.tracking_enabled = False
         
-        # 1. OpenCV 내장 얼굴 검출기(Haar Cascade) 초기화
-        cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        self.face_cascade = cv2.CascadeClassifier(cascade_path)
+        # 1. OpenCV 얼굴 검출기(Haar Cascade) 안전 초기화 (Nuitka/PyInstaller 패키징 환경 완벽 지원)
+        import os, sys
+        possible_paths = [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "haarcascade_frontalface_default.xml"),
+            os.path.join(getattr(sys, "_MEIPASS", os.getcwd()), "haarcascade_frontalface_default.xml"),
+            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        ]
+        
+        self.face_cascade = cv2.CascadeClassifier()
+        loaded = False
+        for path in possible_paths:
+            if os.path.exists(path):
+                self.face_cascade = cv2.CascadeClassifier(path)
+                if not self.face_cascade.empty():
+                    loaded = True
+                    break
+        if not loaded:
+            self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         
         # 2. Optical Flow(Lucas-Kanade) 매개변수 설정
         self.lk_params = dict(
@@ -103,6 +118,9 @@ class FaceTracker(threading.Thread):
                 print(f"노출 제어 설정 중 에러: {e}")
 
     def _detect_face(self, gray, w, is_low_light=False):
+        if self.face_cascade is None or self.face_cascade.empty():
+            return None
+            
         scale = 320.0 / w if w > 320 else 1.0
         h_small = int(gray.shape[0] * scale)
         w_small = int(gray.shape[1] * scale)

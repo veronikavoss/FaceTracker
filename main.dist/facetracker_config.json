@@ -1,0 +1,17 @@
+{
+    "camera_id": 0,
+    "sensitivity_x": 27,
+    "sensitivity_y": 27,
+    "smoothing": 3,
+    "acceleration": 5,
+    "motion_threshold": 2,
+    "tracking_toggle_key": "f12",
+    "auto_exposure": true,
+    "lock_fps_low_light": false,
+    "target_fps": 30,
+    "camera_backend": "DSHOW",
+    "camera_width": 640,
+    "camera_height": 480,
+    "illumination_threshold": 10.0,
+    "spike_threshold": 15.0
+}
