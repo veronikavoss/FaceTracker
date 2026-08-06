@@ -1,2 +1,6 @@
 /eviacam-master
 /__pycache__
+dist_face_tracker/
+*.xml
+*.dist/
+*.build/
