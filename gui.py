@@ -392,9 +392,11 @@ class FaceTrackerGUI:
         rgb_image = cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(rgb_image)
         
-        # Tkinter PhotoImage 안전 생성 (이전 참조를 끊어 Tcl/Tk 네이티브 이미지 해제)
-        # paste()의 메모리 누수 버그를 차단하기 위해 매번 PhotoImage를 생성하는 방식 채택
+        # Tkinter PhotoImage 안전 생성 (이전 참조를 끊어 Tcl/Tk 네이티브 메모리 해제)
+        old_photo = getattr(self, "photo", None)
         self.photo = ImageTk.PhotoImage(image=pil_img)
+        if old_photo is not None:
+            del old_photo
         
         # 캔버스에 이미지 업데이트
         if self.image_id is None:
