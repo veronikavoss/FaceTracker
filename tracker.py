@@ -2,6 +2,10 @@ import cv2
 import numpy as np
 import threading
 import time
+import os
+import sys
+import urllib.request
+import ssl
 from filters import EMASmoothingFilter
 
 class FaceTracker(threading.Thread):
@@ -15,24 +19,9 @@ class FaceTracker(threading.Thread):
         self.running = False
         self.tracking_enabled = False
         
-        # 1. OpenCV 얼굴 검출기(Haar Cascade) 안전 초기화 (Nuitka/PyInstaller 패키징 환경 완벽 지원)
-        import os, sys
-        possible_paths = [
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "haarcascade_frontalface_default.xml"),
-            os.path.join(getattr(sys, "_MEIPASS", os.getcwd()), "haarcascade_frontalface_default.xml"),
-            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        ]
-        
-        self.face_cascade = cv2.CascadeClassifier()
-        loaded = False
-        for path in possible_paths:
-            if os.path.exists(path):
-                self.face_cascade = cv2.CascadeClassifier(path)
-                if not self.face_cascade.empty():
-                    loaded = True
-                    break
-        if not loaded:
-            self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        # 1. OpenCV 5 초경량 딥러닝 얼굴 검출기(YuNet FaceDetectorYN) 초기화
+        self.face_detector = None
+        self._init_face_detector()
         
         # 2. Optical Flow(Lucas-Kanade) 매개변수 설정
         self.lk_params = dict(
@@ -41,17 +30,13 @@ class FaceTracker(threading.Thread):
             criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03)
         )
         
-        # 스무딩 필터 초기화
+        # 3. 스무딩 필터 초기화
         self.filter = EMASmoothingFilter(self.config)
-        
-        # 3. 저조도 어둠 극복용 감마 룩업 테이블(Gamma 2.2 LUT) 사전 구성 (0ms 연산)
-        inv_gamma = 1.0 / 2.2
-        self.gamma_lut = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
         
         # 트래킹 관련 상태 변수
         self.prev_gray = None
         self.track_point = None  # 추적 중인 코 끝 특징점
-        self.face_rect = None    # 시각화용 얼굴 영역
+        self.face_rect = None    # 시각화용 얼굴 영역 (x, y, w, h)
         self.face_rect_smooth = None  # 얼굴 바운딩 박스 흔들림 보정용 스무더
         self.prev_brightness = None   # 조명/모니터 빛 급변 감지용 밝기 기록
         self.illumination_threshold = float(self.config.get("illumination_threshold", 10.0))
@@ -59,6 +44,61 @@ class FaceTracker(threading.Thread):
         self.frame_counter = 0   # 프레임 수 세는 카운터
         
         self.cap = None
+
+    def _init_face_detector(self):
+        """OpenCV 5의 YuNet (FaceDetectorYN) ONNX 모델을 로드합니다."""
+        model_filename = "face_detection_yunet_2023mar.onnx"
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        possible_paths = [
+            os.path.join(base_dir, model_filename),
+            os.path.join(getattr(sys, "_MEIPASS", os.getcwd()), model_filename),
+            os.path.join(os.getcwd(), model_filename)
+        ]
+        
+        model_path = None
+        for path in possible_paths:
+            if os.path.exists(path) and os.path.getsize(path) > 50000:
+                model_path = path
+                break
+                
+        if model_path is None:
+            # 모델 파일이 없는 경우 자동 다운로드 시도
+            target_path = os.path.join(base_dir, model_filename)
+            urls = [
+                "https://raw.githubusercontent.com/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+                "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+                "https://huggingface.co/opencv/face_detection_yunet/resolve/main/face_detection_yunet_2023mar.onnx"
+            ]
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            for url in urls:
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, context=ctx, timeout=10) as resp, open(target_path, "wb") as f:
+                        data = resp.read()
+                        if len(data) > 50000:
+                            f.write(data)
+                            model_path = target_path
+                            print(f"[YuNet] 모델 다운로드 완료: {target_path}")
+                            break
+                except Exception as e:
+                    print(f"[YuNet] 다운로드 실패 ({url}): {e}")
+        
+        if model_path and os.path.exists(model_path):
+            try:
+                self.face_detector = cv2.FaceDetectorYN.create(
+                    model=model_path,
+                    config="",
+                    input_size=(320, 240),
+                    score_threshold=0.5,
+                    nms_threshold=0.3,
+                    top_k=5
+                )
+            except Exception as e:
+                print(f"[YuNet] 모델 초기화 에러: {e}")
+        else:
+            print("[YuNet] 경고: YuNet 모델 파일을 찾을 수 없습니다.")
 
     def start_tracker(self):
         self.running = True
@@ -80,12 +120,6 @@ class FaceTracker(threading.Thread):
         self.prev_brightness = None
         self.filter.reset()
 
-    def update_filter_alpha(self, alpha):
-        self.filter.update_alpha(alpha)
-
-    def update_deadzone(self, deadzone):
-        self.filter.update_deadzone(deadzone)
-
     def update_illumination_threshold(self, val):
         self.illumination_threshold = float(val)
 
@@ -99,7 +133,6 @@ class FaceTracker(threading.Thread):
                 if auto:
                     print("[카메라 노출 설정] 자동 노출(Auto Exposure)을 켭니다.")
                     if backend_str == "DSHOW":
-                        # DirectShow 백엔드: 0.75가 Auto Exposure 표준입니다.
                         r = self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)
                         if not r:
                             self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
@@ -113,26 +146,46 @@ class FaceTracker(threading.Thread):
                         self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)
                     else:
                         self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
-                    self.cap.set(cv2.CAP_PROP_EXPOSURE, -7.0)   # 고속 노출 고정
+                    self.cap.set(cv2.CAP_PROP_EXPOSURE, -7.0)
             except Exception as e:
                 print(f"노출 제어 설정 중 에러: {e}")
 
-    def _detect_face(self, gray, w, is_low_light=False):
-        if self.face_cascade is None or self.face_cascade.empty():
+    def _detect_face(self, frame_bgr, w, h, is_low_light=False):
+        """
+        OpenCV 5 YuNet을 사용하여 얼굴 영역 및 코 끝 랜드마크를 검출합니다.
+        반환값: ((x, y, w, h), (nose_x, nose_y)) 또는 None
+        """
+        if self.face_detector is None:
             return None
             
-        scale = 320.0 / w if w > 320 else 1.0
-        h_small = int(gray.shape[0] * scale)
-        w_small = int(gray.shape[1] * scale)
-        gray_small = cv2.resize(gray, (w_small, h_small))
-        
-        min_size = int(w_small * 0.12)
-        min_neighbors = 2 if is_low_light else 4
-        faces = self.face_cascade.detectMultiScale(gray_small, scaleFactor=1.1, minNeighbors=min_neighbors, minSize=(min_size, min_size))
-        
-        if len(faces) > 0:
-            x_s, y_s, fw_s, fh_s = max(faces, key=lambda f: f[2] * f[3])
-            return (int(x_s / scale), int(y_s / scale), int(fw_s / scale), int(fh_s / scale))
+        try:
+            self.face_detector.setInputSize((w, h))
+            score_th = 0.4 if is_low_light else 0.5
+            self.face_detector.setScoreThreshold(score_th)
+            
+            _, faces = self.face_detector.detect(frame_bgr)
+            
+            if faces is not None and len(faces) > 0:
+                best_face = max(faces, key=lambda f: f[2] * f[3])
+                
+                fx, fy, fw, fh = int(best_face[0]), int(best_face[1]), int(best_face[2]), int(best_face[3])
+                fx = max(0, fx)
+                fy = max(0, fy)
+                fw = min(w - fx, fw)
+                fh = min(h - fy, fh)
+                
+                # YuNet 랜드마크 8, 9번 인덱스: 코 끝(nose tip)
+                nose_x = float(best_face[8])
+                nose_y = float(best_face[9])
+                
+                if not (fx <= nose_x <= fx + fw and fy <= nose_y <= fy + fh):
+                    nose_x = fx + fw / 2.0
+                    nose_y = fy + fh * 0.55
+                
+                return ((fx, fy, fw, fh), (nose_x, nose_y))
+        except Exception as e:
+            print(f"[YuNet] 얼굴 검출 중 예외: {e}")
+            
         return None
 
     def open_camera_settings(self):
@@ -207,7 +260,6 @@ class FaceTracker(threading.Thread):
                     self.cap = cv2.VideoCapture(current_camera_id, backend)
                     w, h, fps, codec, results = apply_settings(self.cap, target_fps, target_w, target_h)
                     
-                    # 노출 모드 재적용
                     auto_exp = self.config.get("auto_exposure", not self.config.get("lock_fps_low_light", False))
                     self.set_auto_exposure(auto_exp)
                     
@@ -247,13 +299,11 @@ class FaceTracker(threading.Thread):
                 illumination_shock = False
                 if self.prev_brightness is not None:
                     brightness_diff = abs(mean_brightness - self.prev_brightness)
-                    # 프레임 간 평균 밝기가 설정된 임계값 이상 순간적으로 급변하면 광량 튐(Shock)으로 감지
                     if brightness_diff > self.illumination_threshold:
                         illumination_shock = True
                 self.prev_brightness = mean_brightness
                 
                 if is_low_light:
-                    # 내부 트래킹용 그레이스케일만 노이즈 없이 명암 대비 조정
                     clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
                     gray_enhanced = clahe.apply(gray)
                     gray = cv2.GaussianBlur(gray_enhanced, (3, 3), 0)
@@ -266,24 +316,17 @@ class FaceTracker(threading.Thread):
                 # 3. 실시간 트래킹 알고리즘
                 if self.tracking_enabled:
                     if self.track_point is None or self.prev_gray is None:
-                        face = self._detect_face(gray, w, is_low_light)
+                        # YuNet 딥러닝으로 얼굴 및 코 끝 랜드마크 검출
+                        detection = self._detect_face(frame, w, h, is_low_light)
                         
-                        if face is not None:
-                            x, y, fw, fh = face
+                        if detection is not None:
+                            (x, y, fw, fh), (nx, ny) = detection
                             self.face_rect_smooth = [float(x), float(y), float(fw), float(fh)]
                             self.face_rect = (x, y, fw, fh)
                             
-                            mask = np.zeros_like(gray)
-                            cx = x + fw // 2
-                            cy = y + int(fh * 0.55)
-                            r = int(min(fw, fh) * 0.15)
-                            cv2.circle(mask, (cx, cy), r, 255, -1)
-                            
-                            corners = cv2.goodFeaturesToTrack(gray, maxCorners=1, qualityLevel=0.01, minDistance=10, mask=mask)
-                            
-                            if corners is not None:
-                                self.track_point = corners
-                                self.prev_gray = gray.copy()
+                            # YuNet 코 끝 위치를 Optical Flow 추적점으로 등록
+                            self.track_point = np.array([[[nx, ny]]], dtype=np.float32)
+                            self.prev_gray = gray.copy()
                     
                     elif self.track_point is not None and self.prev_gray is not None:
                         current_point = self.track_point
@@ -298,10 +341,11 @@ class FaceTracker(threading.Thread):
                         
                         realigned = False
                         if status is not None and status[0][0] == 1:
+                            # 20프레임마다 YuNet으로 얼굴 위치 동기화 및 이탈 방지
                             if self.frame_counter % 20 == 0:
-                                face = self._detect_face(gray, w, is_low_light)
-                                if face is not None:
-                                    x, y, fw, fh = face
+                                detection = self._detect_face(frame, w, h, is_low_light)
+                                if detection is not None:
+                                    (x, y, fw, fh), (nx, ny) = detection
                                     if self.face_rect_smooth is None:
                                         self.face_rect_smooth = [float(x), float(y), float(fw), float(fh)]
                                     else:
@@ -316,21 +360,14 @@ class FaceTracker(threading.Thread):
                                     fh_sm = int(self.face_rect_smooth[3])
                                     self.face_rect = (x_sm, y_sm, fw_sm, fh_sm)
                                     
-                                    cx = x_sm + fw_sm // 2
-                                    cy = y_sm + int(fh_sm * 0.55)
-                                    r = int(min(fw_sm, fh_sm) * 0.12)
-                                    
                                     tx = next_point[0][0][0]
                                     ty = next_point[0][0][1]
-                                    dist = np.sqrt((tx - cx)**2 + (ty - cy)**2)
+                                    dist = np.sqrt((tx - nx)**2 + (ty - ny)**2)
                                     
-                                    if dist > r:
-                                        mask = np.zeros_like(gray)
-                                        cv2.circle(mask, (cx, cy), int(r * 0.8), 255, -1)
-                                        corners = cv2.goodFeaturesToTrack(gray, maxCorners=1, qualityLevel=0.01, minDistance=10, mask=mask)
-                                        if corners is not None:
-                                            next_point = corners
-                                            realigned = True
+                                    max_allowed_dist = min(fw_sm, fh_sm) * 0.2
+                                    if dist > max_allowed_dist:
+                                        next_point = np.array([[[nx, ny]]], dtype=np.float32)
+                                        realigned = True
                                             
                             if realigned or illumination_shock:
                                 raw_dx = 0.0
@@ -340,7 +377,6 @@ class FaceTracker(threading.Thread):
                                 raw_dx = next_point[0][0][0] - current_point[0][0][0]
                                 raw_dy = next_point[0][0][1] - current_point[0][0][1]
                                 
-                                # 순간 광량 반사 튐 스파이크(설정된 임계값 px 이상) 차단
                                 if abs(raw_dx) > self.spike_threshold or abs(raw_dy) > self.spike_threshold:
                                     raw_dx = 0.0
                                     raw_dy = 0.0
@@ -348,7 +384,6 @@ class FaceTracker(threading.Thread):
                             
                             dx, dy = self.filter.filter(raw_dx, raw_dy)
                             
-                            # 0ms Zero-Latency 즉각 반응 제어: 지연 유발 sleep을 전면 제거하여 반응 속도 극대화
                             if self.on_move_callback and (dx != 0.0 or dy != 0.0):
                                 self.on_move_callback(dx, dy)
                                 
@@ -360,12 +395,12 @@ class FaceTracker(threading.Thread):
                         else:
                             self.reset_tracking_state()
                 else:
-                    face = self._detect_face(gray, w, is_low_light)
-                    if face is not None:
-                        x, y, fw, fh = face
+                    detection = self._detect_face(frame, w, h, is_low_light)
+                    if detection is not None:
+                        (x, y, fw, fh), (nx, ny) = detection
                         self.face_rect = (x, y, fw, fh)
-                        nose_x = x + fw // 2
-                        nose_y = y + int(fh * 0.55)
+                        nose_x = int(nx)
+                        nose_y = int(ny)
                     else:
                         self.face_rect = None
 
