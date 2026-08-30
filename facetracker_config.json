@@ -1,10 +1,5 @@
 {
     "camera_id": 0,
-    "sensitivity_x": 27,
-    "sensitivity_y": 27,
-    "smoothing": 3,
-    "acceleration": 5,
-    "motion_threshold": 2,
     "tracking_toggle_key": "f12",
     "auto_exposure": true,
     "lock_fps_low_light": false,
@@ -12,6 +7,24 @@
     "camera_backend": "DSHOW",
     "camera_width": 640,
     "camera_height": 480,
-    "illumination_threshold": 10.0,
-    "spike_threshold": 15.0
+    "tracking_engine": "yunet",
+    "yunet": {
+        "sensitivity_x": 27,
+        "sensitivity_y": 27,
+        "motion_threshold": 2,
+        "smoothing": 3,
+        "acceleration": 5,
+        "illumination_threshold": 10.0,
+        "spike_threshold": 15.0
+    },
+    "mediapipe": {
+        "sensitivity_x": 25,
+        "sensitivity_y": 25,
+        "outlier_threshold": 15.0,
+        "kalman_strength": 5,
+        "adaptive_smoothing": 5,
+        "deadzone": 0.08,
+        "curve_power": 1.35,
+        "acceleration": 5
+    }
 }

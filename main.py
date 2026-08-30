@@ -1,6 +1,8 @@
 import os
-# MSMF 카메라 초기화 속도 대폭 단축을 위한 하드웨어 트랜스폼 비활성화
+# MSMF 카메라 초기화 속도 대폭 단축 및 OpenBLAS 스레드 메모리 충돌 방지
 os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
 
 import queue
 import tkinter as tk
@@ -47,7 +49,7 @@ def main():
     frame_queue = queue.Queue(maxsize=2)
     
     # 2. 콜백 함수 정의 (스레드 세이프 보장)
-    def on_frame_callback(frame, tracking_enabled, nose_x, nose_y, fps, w, h):
+    def on_frame_callback(frame, tracking_enabled, nose_x, nose_y, fps, w, h, engine_name="MediaPipe"):
         # 서브 스레드에서 직접 GUI(메인 스레드)에 접근하지 않고 큐에 데이터 전달
         try:
             if frame_queue.full():
@@ -55,7 +57,7 @@ def main():
                     frame_queue.get_nowait()
                 except queue.Empty:
                     pass
-            frame_queue.put_nowait((frame, tracking_enabled, nose_x, nose_y, fps, w, h))
+            frame_queue.put_nowait((frame, tracking_enabled, nose_x, nose_y, fps, w, h, engine_name))
         except Exception:
             pass
 
