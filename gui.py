@@ -1,858 +1,1226 @@
-import tkinter as tk
-from tkinter import ttk
+import os
+import sys
+from PySide6.QtCore import Qt, QPoint, Signal, Slot, QSize
+from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QIcon, QPainter, QBrush, QPen
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QSlider, QComboBox, QCheckBox, QFrame, QStackedWidget,
+    QGraphicsDropShadowEffect, QSizePolicy, QSpacerItem, QScrollArea, QGridLayout,
+    QDialog, QLineEdit, QMessageBox
+)
+from PySide6.QtMultimedia import QMediaDevices
 import cv2
-from PIL import Image, ImageTk
+import numpy as np
 import config
+from pynput import keyboard
 
-class FaceTrackerGUI:
-    def __init__(self, root, app_config, tracker, frame_queue):
-        self.root = root
+class DarkInputDialog(QDialog):
+    """글자와 버튼이 선명하고 아름답게 보이는 다크 테마 입력 대화상자"""
+    def __init__(self, parent, title, prompt):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setFixedSize(360, 160)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #151D2A;
+                border: 1px solid #233044;
+                border-radius: 10px;
+            }
+            QLabel {
+                color: #F8FAFC;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QLineEdit {
+                background-color: #0B111A;
+                color: #FFFFFF;
+                border: 1px solid #38BDF8;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #7DD3FC;
+                background-color: #0F172A;
+            }
+            QPushButton#ConfirmBtn {
+                background-color: #0284C7;
+                color: #FFFFFF;
+                font-size: 12px;
+                font-weight: bold;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+            }
+            QPushButton#ConfirmBtn:hover {
+                background-color: #0369A1;
+            }
+            QPushButton#CancelBtn {
+                background-color: #334155;
+                color: #F8FAFC;
+                font-size: 12px;
+                font-weight: 600;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+            }
+            QPushButton#CancelBtn:hover {
+                background-color: #475569;
+            }
+        """)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(12)
+        
+        self.prompt_lbl = QLabel(prompt)
+        layout.addWidget(self.prompt_lbl)
+        
+        self.input_edit = QLineEdit()
+        layout.addWidget(self.input_edit)
+        
+        btn_box = QHBoxLayout()
+        btn_box.addStretch()
+        
+        self.cancel_btn = QPushButton("취소")
+        self.cancel_btn.setObjectName("CancelBtn")
+        self.cancel_btn.setCursor(Qt.PointingHandCursor)
+        self.cancel_btn.clicked.connect(self.reject)
+        
+        self.confirm_btn = QPushButton("확인")
+        self.confirm_btn.setObjectName("ConfirmBtn")
+        self.confirm_btn.setCursor(Qt.PointingHandCursor)
+        self.confirm_btn.clicked.connect(self.accept)
+        
+        btn_box.addWidget(self.cancel_btn)
+        btn_box.addWidget(self.confirm_btn)
+        layout.addLayout(btn_box)
+        
+        self.input_edit.setFocus()
+
+    def get_text(self):
+        return self.input_edit.text()
+
+# ========================================================
+# QSS 프리미엄 다크 테마 스타일시트
+# ========================================================
+STYLE_SHEET = """
+QWidget {
+    font-family: 'Segoe UI', 'Inter', sans-serif;
+    color: #F8FAFC;
+}
+
+/* 메인 윈도우 배경 및 테두리 */
+#MainContainer {
+    background-color: #0B0F17;
+    border: 1px solid #233044;
+    border-radius: 12px;
+}
+
+/* 좌측 사이드바 */
+#Sidebar {
+    background-color: #0D131F;
+    border-right: 1px solid #1E293B;
+    border-top-left-radius: 12px;
+    border-bottom-left-radius: 12px;
+}
+
+/* 사이드바 탭 버튼 */
+QPushButton.NavButton {
+    background-color: transparent;
+    color: #94A3B8;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 12px 16px;
+    border: none;
+    border-radius: 8px;
+}
+
+QPushButton.NavButton:hover {
+    background-color: #162032;
+    color: #F8FAFC;
+}
+
+QPushButton.NavButton:checked {
+    background-color: #1E293B;
+    color: #38BDF8;
+    border-left: 3px solid #10B981;
+}
+
+/* 글래스모피즘 대시보드 카드 */
+QFrame.DashboardCard {
+    background-color: #151D2A;
+    border: 1px solid #233044;
+    border-radius: 10px;
+}
+
+/* 대형 시작 버튼 (기본: 에메랄드 네온 글로우) */
+QPushButton#StartButton {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #10B981, stop:1 #059669);
+    color: #FFFFFF;
+    font-size: 15px;
+    font-weight: bold;
+    border-radius: 25px;
+    border: 1px solid #34D399;
+    padding: 12px 28px;
+}
+
+QPushButton#StartButton:hover {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #34D399, stop:1 #10B981);
+}
+
+QPushButton#StartButton:checked {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #EF4444, stop:1 #DC2626);
+    border: 1px solid #F87171;
+}
+
+QPushButton#StartButton:checked:hover {
+    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #F87171, stop:1 #EF4444);
+}
+
+/* 슬라이더 스타일링 */
+QSlider::groove:horizontal {
+    border: none;
+    height: 6px;
+    background: #0B111A;
+    border-radius: 3px;
+}
+
+QSlider::sub-page:horizontal {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284C7, stop:1 #38BDF8);
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    background: #38BDF8;
+    border: 2px solid #FFFFFF;
+    width: 16px;
+    height: 16px;
+    margin: -5px 0;
+    border-radius: 8px;
+}
+
+QSlider::handle:horizontal:hover {
+    background: #7DD3FC;
+}
+
+/* 콤보박스 */
+QComboBox {
+    background-color: #0B111A;
+    border: 1px solid #233044;
+    border-radius: 6px;
+    padding: 5px 10px;
+    color: #F8FAFC;
+    font-size: 12px;
+}
+
+QComboBox:hover {
+    border: 1px solid #38BDF8;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #151D2A;
+    border: 1px solid #233044;
+    color: #F8FAFC;
+    selection-background-color: #1E293B;
+    selection-color: #38BDF8;
+}
+
+/* 체크박스 */
+QCheckBox {
+    color: #94A3B8;
+    font-size: 11px;
+    spacing: 8px;
+}
+
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid #233044;
+    background-color: #0B111A;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #10B981;
+    border-color: #34D399;
+}
+
+/* 보조 버튼 */
+QPushButton.SecondaryButton {
+    background-color: #1E293B;
+    color: #94A3B8;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid #233044;
+    border-radius: 6px;
+    padding: 6px 12px;
+}
+
+QPushButton.SecondaryButton:hover {
+    background-color: #2D3B4F;
+    color: #F8FAFC;
+    border-color: #38BDF8;
+}
+
+/* 강조 보조 버튼 */
+QPushButton.PrimaryActionBtn {
+    background-color: #0369A1;
+    color: #FFFFFF;
+    font-size: 11px;
+    font-weight: bold;
+    border: 1px solid #38BDF8;
+    border-radius: 6px;
+    padding: 6px 12px;
+}
+
+QPushButton.PrimaryActionBtn:hover {
+    background-color: #0284C7;
+}
+
+/* 위험/삭제 버튼 */
+QPushButton.DangerBtn {
+    background-color: #381A1A;
+    color: #F87171;
+    font-size: 11px;
+    font-weight: bold;
+    border: 1px solid #7F1D1D;
+    border-radius: 6px;
+    padding: 6px 12px;
+}
+
+QPushButton.DangerBtn:hover {
+    background-color: #451A1A;
+    color: #EF4444;
+    border-color: #DC2626;
+}
+
+/* 스크롤 영역 */
+QScrollArea {
+    border: none;
+    background: transparent;
+}
+"""
+
+class CustomTitleBar(QWidget):
+    """모던 다크 커스텀 타이틀바 (창 드래그 및 최소화/닫기 버튼 내장)"""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.drag_position = QPoint()
+        self.setFixedHeight(38)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 0, 10, 0)
+        
+        # 타이틀바 텍스트
+        self.title_lbl = QLabel("Face Tracker")
+        self.title_lbl.setStyleSheet("color: #94A3B8; font-size: 12px; font-weight: 600;")
+        layout.addWidget(self.title_lbl)
+        
+        version_lbl = QLabel("v2.2")
+        version_lbl.setStyleSheet("color: #475569; font-size: 10px; font-weight: bold; margin-left: 6px;")
+        layout.addWidget(version_lbl)
+        
+        layout.addStretch()
+        
+        # 최소화 버튼
+        self.min_btn = QPushButton("─")
+        self.min_btn.setFixedSize(26, 26)
+        self.min_btn.setStyleSheet("""
+            QPushButton { background: transparent; color: #94A3B8; border: none; font-size: 10px; border-radius: 4px; }
+            QPushButton:hover { background: #1E293B; color: #FFFFFF; }
+        """)
+        self.min_btn.clicked.connect(self.parent.showMinimized)
+        layout.addWidget(self.min_btn)
+        
+        # 닫기 버튼
+        self.close_btn = QPushButton("✕")
+        self.close_btn.setFixedSize(26, 26)
+        self.close_btn.setStyleSheet("""
+            QPushButton { background: transparent; color: #94A3B8; border: none; font-size: 12px; border-radius: 4px; }
+            QPushButton:hover { background: #DC2626; color: #FFFFFF; }
+        """)
+        self.close_btn.clicked.connect(self.parent.close)
+        layout.addWidget(self.close_btn)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPosition().toPoint() - self.parent.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and not self.drag_position.isNull():
+            self.parent.move(event.globalPosition().toPoint() - self.drag_position)
+            event.accept()
+
+
+class FaceTrackerGUI(QWidget):
+    # 백엔드 스레드로부터 비디오 프레임 전달받는 Qt 시그널
+    frame_received_signal = Signal(QImage, bool, int, int, int, int, int)
+    tracking_toggled_signal = Signal(bool)
+
+    def __init__(self, app_config, tracker):
+        super().__init__()
         self.config = app_config
         self.tracker = tracker
-        self.frame_queue = frame_queue
         
-        # 윈도우 타이틀 및 크기 설정 (설정 패널 확장에 맞춘 높이 660px)
-        self.root.title("Face Tracker")
-        self.root.geometry("1020x660")
-        self.root.resizable(False, False)
+        # 윈도우 기본 설정 (프레임리스 + 둥근 모서리)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.resize(880, 750)
+        self.setMinimumSize(820, 700)
         
-        # 스타일 테마 정의 (Modern Premium Dark Mode)
-        self.bg_color = "#0F172A"       # 미드나이트 다크 블루
-        self.card_color = "#1E293B"     # 다크 슬레이트 카드 배경
-        self.text_color = "#F8FAFC"     # 부드러운 화이트 텍스트
-        self.accent_color = "#3B82F6"   # 네온 아쿠아 블루 (활성화)
-        self.mp_accent_color = "#06B6D4"# 시안 (MediaPipe 테마)
-        self.inactive_color = "#EF4444" # 부드러운 레드 (비활성화)
-        self.muted_color = "#94A3B8"    # 뮤트 그레이 텍스트
+        self.setStyleSheet(STYLE_SHEET)
         
-        self.root.configure(bg=self.bg_color)
+        # 카메라 하드웨어 이름 매핑 리스트: [(id, name), ...]
+        self.camera_device_list = self._detect_camera_names()
         
-        # 스타일러 구성
-        self.style = ttk.Style()
-        self.style.theme_use("clam")
-        self.style.configure(".", background=self.bg_color, foreground=self.text_color)
-        self.style.configure(
-            "TCombobox", 
-            fieldbackground="#1E293B", 
-            background="#334155", 
-            foreground="#F8FAFC", 
-            arrowcolor="#F8FAFC",
-            bordercolor="#334155"
-        )
-        self.style.map(
-            "TCombobox", 
-            fieldbackground=[('readonly', '#1E293B')],
-            foreground=[('readonly', '#F8FAFC')]
-        )
+        # 메인 컨테이너
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 전체 그리드 레이아웃
-        self.root.columnconfigure(0, weight=3) # 카메라 화면 영역
-        self.root.columnconfigure(1, weight=2) # 컨트롤 패널 영역
-        self.root.rowconfigure(0, weight=1)
+        self.container = QWidget()
+        self.container.setObjectName("MainContainer")
+        container_layout = QVBoxLayout(self.container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
         
-        self._init_camera_panel()
-        self._init_control_panel()
+        # 1. 커스텀 타이틀바
+        self.title_bar = CustomTitleBar(self)
+        container_layout.addWidget(self.title_bar)
         
-        # 종료 시 리소스 정리
-        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        # 2. 본문 (사이드바 + 스택 위젯 콘텐츠)
+        content_box = QHBoxLayout()
+        content_box.setContentsMargins(0, 0, 0, 0)
+        content_box.setSpacing(0)
         
-        self.photo = None
-        self.image_id = None
+        # 좌측 사이드바
+        self.sidebar = self._build_sidebar()
+        content_box.addWidget(self.sidebar)
+        
+        # 우측 페이지 스택
+        self.page_stack = QStackedWidget()
+        self.page_stack.setStyleSheet("background-color: transparent;")
+        
+        self.home_page = self._build_home_page()
+        self.settings_page = self._build_settings_page()
+        self.help_page = self._build_help_page()
+        
+        self.page_stack.addWidget(self.home_page)
+        self.page_stack.addWidget(self.settings_page)
+        self.page_stack.addWidget(self.help_page)
+        
+        content_box.addWidget(self.page_stack)
+        container_layout.addLayout(content_box)
+        main_layout.addWidget(self.container)
+        
+        # 시그널 연결
+        self.frame_received_signal.connect(self.update_video_frame)
+        self.tracking_toggled_signal.connect(self.sync_tracking_ui)
+        
+        self.is_recording_hotkey = False
+        self.key_listener = None
 
-    def _init_camera_panel(self):
-        # 카메라 패널 프레임 (Card 스타일)
-        self.cam_frame = tk.Frame(self.root, bg=self.card_color, bd=0, highlightthickness=2, highlightbackground="#334155")
-        self.cam_frame.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
-        
-        # 헤더 영역 프레임 (타이틀 & FPS/해상도 정보 표시)
-        self.cam_header = tk.Frame(self.cam_frame, bg=self.card_color)
-        self.cam_header.pack(fill="x", padx=15, pady=10)
-        
-        # 타이틀
-        self.cam_title = tk.Label(self.cam_header, text="LIVE VIDEO FEED", font=("Inter", 12, "bold"), fg=self.accent_color, bg=self.card_color)
-        self.cam_title.pack(side="left")
-        
-        # FPS & 해상도 정보 표시 라벨
-        self.info_label = tk.Label(self.cam_header, text="FPS: -- | --x--", font=("Inter", 10, "bold"), fg=self.muted_color, bg=self.card_color)
-        self.info_label.pack(side="right")
-        
-        # 비디오 표시 캔버스
-        self.canvas = tk.Canvas(self.cam_frame, width=640, height=360, bg="#020617", bd=0, highlightthickness=0)
-        self.canvas.pack(padx=15, pady=5, fill="both", expand=True)
-        
-        # 초기 카메라 대기 상태 텍스트
-        self.canvas.create_text(320, 180, text="카메라 연결 대기 중...", fill=self.muted_color, font=("Segoe UI", 12))
-
-    def _init_control_panel(self):
-        # 우측 컨트롤 프레임
-        self.ctrl_frame = tk.Frame(self.root, bg=self.card_color, bd=0, highlightthickness=2, highlightbackground="#334155")
-        self.ctrl_frame.grid(row=0, column=1, padx=(0, 20), pady=20, sticky="nsew")
-        
-        # 프로그램 이름 및 상태 헤더
-        header_label = tk.Label(self.ctrl_frame, text="Face Tracker", font=("Outfit", 18, "bold"), fg=self.text_color, bg=self.card_color)
-        header_label.pack(anchor="w", padx=20, pady=(15, 2))
-        
-        self.status_label = tk.Label(self.ctrl_frame, text="비활성 상태 (F12키로 활성화)", font=("Inter", 9, "bold"), fg=self.inactive_color, bg=self.card_color)
-        self.status_label.pack(anchor="w", padx=20, pady=(0, 8))
-        
-        # 트래킹 엔진 선택 프레임
-        self.engine_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
-        self.engine_frame.pack(fill="x", padx=20, pady=(0, 10))
-        
-        self.engine_label = tk.Label(
-            self.engine_frame, text="트래킹 엔진:", font=("Segoe UI", 9, "bold"),
-            fg=self.accent_color, bg=self.card_color
-        )
-        self.engine_label.pack(side="left", padx=(0, 8))
-        
-        engine_options = ["MediaPipe (정밀 3D)", "YuNet (초경량 AI)"]
-        self.engine_combo = ttk.Combobox(
-            self.engine_frame, values=engine_options, state="readonly", width=18
-        )
-        
-        curr_engine = self.config.get("tracking_engine", "mediapipe").lower()
-        if curr_engine == "yunet":
-            self.engine_combo.current(1)
-        else:
-            self.engine_combo.current(0)
+    def _detect_camera_names(self):
+        """QMediaDevices를 사용하여 시스템에 연결된 실제 카메라 원래 이름을 검출"""
+        devs = QMediaDevices.videoInputs()
+        result = []
+        for i, d in enumerate(devs):
+            name = d.description()
+            if not name:
+                name = f"카메라 {i}"
+            result.append((i, name))
             
-        self.engine_combo.pack(side="left", fill="x", expand=True)
-        self.engine_combo.bind("<<ComboboxSelected>>", self.on_engine_select)
-        
-        # 구분선
-        self.sep1 = tk.Frame(self.ctrl_frame, height=1, bg="#334155")
-        self.sep1.pack(fill="x", padx=20, pady=(0, 10))
-        
-        # ========================================================
-        # [패널 1] MediaPipe 전용 5단계 파이프라인 패널
-        # ========================================================
-        self.mp_panel = tk.Frame(self.ctrl_frame, bg=self.card_color)
-        self._build_mediapipe_panel()
-        
-        # ========================================================
-        # [패널 2] YuNet 전용 파이프라인 패널
-        # ========================================================
-        self.yn_panel = tk.Frame(self.ctrl_frame, bg=self.card_color)
-        self._build_yunet_panel()
-        
-        # 현재 선택된 엔진 패널 표시
-        self._switch_panel(curr_engine)
-        
-        # 구분선 2
-        self.sep2 = tk.Frame(self.ctrl_frame, height=1, bg="#334155")
-        self.sep2.pack(fill="x", padx=20, pady=(5, 10))
+        if not result:
+            result = [(0, "기본 카메라 (카메라 0)"), (1, "카메라 1")]
+        return result
 
-        # 공통 시스템 컨트롤 (단축키, 카메라 선택, 해상도, FPS, 노출)
-        self._build_common_controls()
+    def _get_current_cam_name(self):
+        cur_id = self.config.get("camera_id", 0)
+        for cid, cname in self.camera_device_list:
+            if cid == cur_id:
+                return cname
+        return f"카메라 {cur_id}"
 
-    def _build_mediapipe_panel(self):
-        """MediaPipe Head Pose (머리 자세 5단계) 전용 컨트롤 패널 구축"""
-        mp_cfg = self.config.get("mediapipe", {})
+    def _build_sidebar(self):
+        sidebar = QWidget()
+        sidebar.setObjectName("Sidebar")
+        sidebar.setFixedWidth(160)
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(12, 16, 12, 16)
+        layout.setSpacing(8)
         
-        # 1. 민감도 X / Y (2열 가로 배치)
-        sens_f = tk.Frame(self.mp_panel, bg=self.card_color)
-        sens_f.pack(fill="x", pady=(0, 4))
-        sens_f.columnconfigure(0, weight=1)
-        sens_f.columnconfigure(1, weight=1)
+        # 네비게이션 버튼들 (Home, Settings, Help 만 깔끔하게 배치)
+        self.nav_home = QPushButton("  🏠  Home")
+        self.nav_home.setProperty("class", "NavButton")
+        self.nav_home.setCheckable(True)
+        self.nav_home.setChecked(True)
+        self.nav_home.clicked.connect(lambda: self._switch_page(0))
+        layout.addWidget(self.nav_home)
         
-        # X 민감도
-        c_x = tk.Frame(sens_f, bg=self.card_color)
-        c_x.grid(row=0, column=0, padx=(0, 5), sticky="ew")
-        init_x = int(mp_cfg.get("sensitivity_x", 25))
-        self.mp_sx_lbl = tk.Label(c_x, text=f"민감도 X (Yaw): {init_x}", font=("Inter", 8, "bold"), fg=self.text_color, bg=self.card_color)
-        self.mp_sx_lbl.pack(anchor="w")
-        self.mp_sx_scale = tk.Scale(
-            c_x, from_=0, to=50, resolution=1, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.mp_accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_mp_sx_change
-        )
-        self.mp_sx_scale.set(init_x)
-        self.mp_sx_scale.pack(fill="x", pady=(1, 0))
+        self.nav_settings = QPushButton("  ⚙️  Settings")
+        self.nav_settings.setProperty("class", "NavButton")
+        self.nav_settings.setCheckable(True)
+        self.nav_settings.clicked.connect(lambda: self._switch_page(1))
+        layout.addWidget(self.nav_settings)
         
-        # Y 민감도
-        c_y = tk.Frame(sens_f, bg=self.card_color)
-        c_y.grid(row=0, column=1, padx=(5, 0), sticky="ew")
-        init_y = int(mp_cfg.get("sensitivity_y", 25))
-        self.mp_sy_lbl = tk.Label(c_y, text=f"민감도 Y (Pitch): {init_y}", font=("Inter", 8, "bold"), fg=self.text_color, bg=self.card_color)
-        self.mp_sy_lbl.pack(anchor="w")
-        self.mp_sy_scale = tk.Scale(
-            c_y, from_=0, to=50, resolution=1, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.mp_accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_mp_sy_change
-        )
-        self.mp_sy_scale.set(init_y)
-        self.mp_sy_scale.pack(fill="x", pady=(1, 0))
+        self.nav_help = QPushButton("  ❓  Help")
+        self.nav_help.setProperty("class", "NavButton")
+        self.nav_help.setCheckable(True)
+        self.nav_help.clicked.connect(lambda: self._switch_page(2))
+        layout.addWidget(self.nav_help)
         
-        # 2열 그리드: (1. 2D 칼만 필터, 2. 속도 적응 스무딩)
-        row1_f = tk.Frame(self.mp_panel, bg=self.card_color)
-        row1_f.pack(fill="x", pady=(0, 4))
-        row1_f.columnconfigure(0, weight=1)
-        row1_f.columnconfigure(1, weight=1)
+        layout.addStretch()
         
-        # 1. 2D 칼만 필터 (0 ~ 10)
-        c_k = tk.Frame(row1_f, bg=self.card_color)
-        c_k.grid(row=0, column=0, padx=(0, 5), sticky="ew")
-        init_k = int(mp_cfg.get("kalman_strength", 5))
-        self.mp_k_lbl = tk.Label(c_k, text=f"1. 칼만 필터: {init_k}", font=("Inter", 8), fg=self.text_color, bg=self.card_color)
-        self.mp_k_lbl.pack(anchor="w")
-        self.mp_k_scale = tk.Scale(
-            c_k, from_=0, to=10, resolution=1, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.mp_accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_mp_k_change
-        )
-        self.mp_k_scale.set(init_k)
-        self.mp_k_scale.pack(fill="x", pady=(1, 0))
+        # 하단 단축키 힌트
+        shortcut_box = QFrame()
+        shortcut_box.setStyleSheet("background-color: #111A29; border-radius: 6px; padding: 6px;")
+        sc_layout = QVBoxLayout(shortcut_box)
+        sc_layout.setContentsMargins(4, 4, 4, 4)
+        sc_lbl = QLabel("Toggle Hotkey")
+        sc_lbl.setStyleSheet("color: #64748B; font-size: 9px; font-weight: bold;")
+        self.sc_key_lbl = QLabel(f"[{self.config.get('tracking_toggle_key', 'F12').upper()}]")
+        self.sc_key_lbl.setStyleSheet("color: #38BDF8; font-size: 11px; font-weight: bold;")
+        sc_layout.addWidget(sc_lbl)
+        sc_layout.addWidget(self.sc_key_lbl)
+        layout.addWidget(shortcut_box)
         
-        # 2. 속도 적응 스무딩 (0 ~ 10)
-        c_as = tk.Frame(row1_f, bg=self.card_color)
-        c_as.grid(row=0, column=1, padx=(5, 0), sticky="ew")
-        init_as = int(mp_cfg.get("adaptive_smoothing", 5))
-        self.mp_as_lbl = tk.Label(c_as, text=f"2. 적응 스무딩: {init_as}", font=("Inter", 8), fg=self.text_color, bg=self.card_color)
-        self.mp_as_lbl.pack(anchor="w")
-        self.mp_as_scale = tk.Scale(
-            c_as, from_=0, to=10, resolution=1, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.mp_accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_mp_as_change
-        )
-        self.mp_as_scale.set(init_as)
-        self.mp_as_scale.pack(fill="x", pady=(1, 0))
-        
-        # 2열 그리드: (3. 각도 데드존, 4. 비선형 커브 지수)
-        row2_f = tk.Frame(self.mp_panel, bg=self.card_color)
-        row2_f.pack(fill="x", pady=(0, 4))
-        row2_f.columnconfigure(0, weight=1)
-        row2_f.columnconfigure(1, weight=1)
-        
-        # 3. 각도 데드존 (0.00 ~ 0.50도)
-        c_dz = tk.Frame(row2_f, bg=self.card_color)
-        c_dz.grid(row=0, column=0, padx=(0, 5), sticky="ew")
-        init_dz = float(mp_cfg.get("deadzone", 0.08))
-        self.mp_dz_lbl = tk.Label(c_dz, text=f"3. 각도 데드존: {init_dz}°", font=("Inter", 8), fg=self.text_color, bg=self.card_color)
-        self.mp_dz_lbl.pack(anchor="w")
-        self.mp_dz_scale = tk.Scale(
-            c_dz, from_=0.00, to=0.50, resolution=0.01, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.mp_accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_mp_dz_change
-        )
-        self.mp_dz_scale.set(init_dz)
-        self.mp_dz_scale.pack(fill="x", pady=(1, 0))
-        
-        # 4. 비선형 커브 지수 (1.0 ~ 1.8)
-        c_cp = tk.Frame(row2_f, bg=self.card_color)
-        c_cp.grid(row=0, column=1, padx=(5, 0), sticky="ew")
-        init_cp = float(mp_cfg.get("curve_power", 1.35))
-        self.mp_cp_lbl = tk.Label(c_cp, text=f"4. 비선형 커브: {init_cp}", font=("Inter", 8), fg=self.text_color, bg=self.card_color)
-        self.mp_cp_lbl.pack(anchor="w")
-        self.mp_cp_scale = tk.Scale(
-            c_cp, from_=1.0, to=1.8, resolution=0.05, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.mp_accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_mp_cp_change
-        )
-        self.mp_cp_scale.set(init_cp)
-        self.mp_cp_scale.pack(fill="x", pady=(1, 0))
-        
-        # 5. 가속도 (Acceleration) & 초기화 버튼
-        row3_f = tk.Frame(self.mp_panel, bg=self.card_color)
-        row3_f.pack(fill="x", pady=(0, 2))
-        row3_f.columnconfigure(0, weight=3)
-        row3_f.columnconfigure(1, weight=2)
-        
-        c_acc = tk.Frame(row3_f, bg=self.card_color)
-        c_acc.grid(row=0, column=0, padx=(0, 5), sticky="ew")
-        init_acc = int(mp_cfg.get("acceleration", 5))
-        self.mp_acc_lbl = tk.Label(c_acc, text=f"5. 모션 가속도: {init_acc}", font=("Inter", 8), fg=self.text_color, bg=self.card_color)
-        self.mp_acc_lbl.pack(anchor="w")
-        self.mp_acc_scale = tk.Scale(
-            c_acc, from_=0, to=10, resolution=1, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.mp_accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_mp_acc_change
-        )
-        self.mp_acc_scale.set(init_acc)
-        self.mp_acc_scale.pack(fill="x", pady=(1, 0))
-        
-        # MediaPipe 기본값 초기화 버튼
-        c_rst = tk.Frame(row3_f, bg=self.card_color)
-        c_rst.grid(row=0, column=1, padx=(5, 0), sticky="se", pady=(0, 2))
-        self.mp_reset_btn = tk.Button(
-            c_rst, text="↺ MP 설정 초기화", font=("Segoe UI", 8, "bold"),
-            bg="#334155", fg=self.text_color, activebackground="#475569", activeforeground=self.text_color,
-            bd=0, padx=6, pady=4, relief="flat", cursor="hand2", command=self.reset_mediapipe_defaults
-        )
-        self.mp_reset_btn.pack(fill="x")
+        return sidebar
 
-    def _build_yunet_panel(self):
-        """YuNet 전용 컨트롤 패널 구축"""
-        yn_cfg = self.config.get("yunet", {})
+    def _switch_page(self, index):
+        self.page_stack.setCurrentIndex(index)
+        self.nav_home.setChecked(index == 0)
+        self.nav_settings.setChecked(index == 1)
+        self.nav_help.setChecked(index == 2)
+
+    # ========================================================
+    # 1. Home Page: 대형 카메라 화면 + 카메라 퀵 제어 + START 버튼
+    # ========================================================
+    def _build_home_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 14, 20, 16)
+        layout.setSpacing(10)
         
-        # 감도(Sensitivity X/Y)
-        sens_f = tk.Frame(self.yn_panel, bg=self.card_color)
-        sens_f.pack(fill="x", pady=(0, 6))
-        sens_f.columnconfigure(0, weight=1)
-        sens_f.columnconfigure(1, weight=1)
+        # 1-1. 대형 라이브 카메라 프리뷰 카드
+        video_card = QFrame()
+        video_card.setProperty("class", "DashboardCard")
+        vc_layout = QVBoxLayout(video_card)
+        vc_layout.setContentsMargins(14, 10, 14, 10)
+        vc_layout.setSpacing(6)
         
-        # X 민감도
-        c_x = tk.Frame(sens_f, bg=self.card_color)
-        c_x.grid(row=0, column=0, padx=(0, 5), sticky="ew")
-        init_x = int(yn_cfg.get("sensitivity_x", 27))
-        self.yn_sx_lbl = tk.Label(c_x, text=f"민감도 X: {init_x}", font=("Inter", 8, "bold"), fg=self.text_color, bg=self.card_color)
-        self.yn_sx_lbl.pack(anchor="w")
-        self.yn_sx_scale = tk.Scale(
-            c_x, from_=0, to=50, resolution=1, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_yn_sx_change
-        )
-        self.yn_sx_scale.set(init_x)
-        self.yn_sx_scale.pack(fill="x", pady=(1, 0))
+        # 카드 상단 헤더
+        vc_header = QHBoxLayout()
+        vc_title = QLabel("LIVE VIDEO FEED")
+        vc_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #38BDF8; letter-spacing: 0.5px;")
         
-        # Y 민감도
-        c_y = tk.Frame(sens_f, bg=self.card_color)
-        c_y.grid(row=0, column=1, padx=(5, 0), sticky="ew")
-        init_y = int(yn_cfg.get("sensitivity_y", 27))
-        self.yn_sy_lbl = tk.Label(c_y, text=f"민감도 Y: {init_y}", font=("Inter", 8, "bold"), fg=self.text_color, bg=self.card_color)
-        self.yn_sy_lbl.pack(anchor="w")
-        self.yn_sy_scale = tk.Scale(
-            c_y, from_=0, to=50, resolution=1, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_yn_sy_change
-        )
-        self.yn_sy_scale.set(init_y)
-        self.yn_sy_scale.pack(fill="x", pady=(1, 0))
+        self.badge_detected = QLabel("추적 대기 중...")
+        self.badge_detected.setStyleSheet("""
+            background-color: #2A1414; color: #EF4444;
+            font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 4px;
+        """)
+        vc_header.addWidget(vc_title)
+        vc_header.addStretch()
+        vc_header.addWidget(self.badge_detected)
+        vc_layout.addLayout(vc_header)
         
-        # 임계값 / 스무딩
-        row1_f = tk.Frame(self.yn_panel, bg=self.card_color)
-        row1_f.pack(fill="x", pady=(0, 6))
-        row1_f.columnconfigure(0, weight=1)
-        row1_f.columnconfigure(1, weight=1)
+        # 비디오 캔버스 라벨 (가로 540px, 세로 360px)
+        self.video_canvas = QLabel()
+        self.video_canvas.setFixedSize(540, 360)
+        self.video_canvas.setStyleSheet("background-color: #000000; border-radius: 8px;")
+        self.video_canvas.setAlignment(Qt.AlignCenter)
+        vc_layout.addWidget(self.video_canvas, 0, Qt.AlignCenter)
         
-        # 임계값
-        c_th = tk.Frame(row1_f, bg=self.card_color)
-        c_th.grid(row=0, column=0, padx=(0, 5), sticky="ew")
-        init_th = int(yn_cfg.get("motion_threshold", 2))
-        self.yn_th_lbl = tk.Label(c_th, text=f"임계값: {init_th}", font=("Inter", 8), fg=self.text_color, bg=self.card_color)
-        self.yn_th_lbl.pack(anchor="w")
-        self.yn_th_scale = tk.Scale(
-            c_th, from_=0, to=4, resolution=1, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_yn_th_change
-        )
-        self.yn_th_scale.set(init_th)
-        self.yn_th_scale.pack(fill="x", pady=(1, 0))
+        # 하단 카메라 메타정보 바
+        vc_footer = QHBoxLayout()
+        self.cam_name_lbl = QLabel(f"Device: {self._get_current_cam_name()}")
+        self.cam_name_lbl.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        
+        self.cam_fps_lbl = QLabel("FPS: 0 | 640x480")
+        self.cam_fps_lbl.setStyleSheet("color: #38BDF8; font-size: 11px; font-weight: bold;")
+        vc_footer.addWidget(self.cam_name_lbl)
+        vc_footer.addStretch()
+        vc_footer.addWidget(self.cam_fps_lbl)
+        vc_layout.addLayout(vc_footer)
+        
+        layout.addWidget(video_card)
+        
+        # 1-2. 카메라 퀵 컨트롤 카드 (실제 카메라 이름 반영!)
+        cam_ctrl_card = QFrame()
+        cam_ctrl_card.setProperty("class", "DashboardCard")
+        cc_layout = QVBoxLayout(cam_ctrl_card)
+        cc_layout.setContentsMargins(14, 10, 14, 10)
+        cc_layout.setSpacing(8)
+        
+        # 1행: 카메라 선택 (실제 하드웨어 명칭 노출), 해상도, FPS 드롭다운
+        row1 = QHBoxLayout()
+        cam_lbl = QLabel("카메라 선택:")
+        cam_lbl.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        
+        self.cam_combo = QComboBox()
+        cur_cam_id = self.config.get("camera_id", 0)
+        cur_idx = 0
+        for idx, (cid, cname) in enumerate(self.camera_device_list):
+            self.cam_combo.addItem(cname, cid)
+            if cid == cur_cam_id:
+                cur_idx = idx
+        self.cam_combo.setCurrentIndex(cur_idx)
+        self.cam_combo.currentIndexChanged.connect(self._on_camera_changed)
+        
+        res_lbl = QLabel("해상도:")
+        res_lbl.setStyleSheet("color: #94A3B8; font-size: 11px; margin-left: 10px;")
+        self.res_combo = QComboBox()
+        self.res_combo.addItems(["640x480", "1280x720", "320x240"])
+        cur_res = f"{self.config.get('camera_width', 640)}x{self.config.get('camera_height', 480)}"
+        self.res_combo.setCurrentText(cur_res)
+        self.res_combo.currentIndexChanged.connect(self._on_resolution_changed)
+        
+        fps_lbl = QLabel("FPS:")
+        fps_lbl.setStyleSheet("color: #94A3B8; font-size: 11px; margin-left: 10px;")
+        self.fps_combo = QComboBox()
+        self.fps_combo.addItems(["30", "60"])
+        self.fps_combo.setCurrentText(str(self.config.get("target_fps", 30)))
+        self.fps_combo.currentIndexChanged.connect(self._on_fps_changed)
+        
+        row1.addWidget(cam_lbl)
+        row1.addWidget(self.cam_combo, 1)
+        row1.addWidget(res_lbl)
+        row1.addWidget(self.res_combo)
+        row1.addWidget(fps_lbl)
+        row1.addWidget(self.fps_combo)
+        cc_layout.addLayout(row1)
+        
+        # 2행: 자동 노출 및 저조도 고정 체크박스
+        row2 = QHBoxLayout()
+        self.auto_exp_chk = QCheckBox("카메라 자동 노출 켜기 (Auto Exposure)")
+        self.auto_exp_chk.setChecked(self.config.get("auto_exposure", True))
+        self.auto_exp_chk.toggled.connect(self._on_auto_exp_toggled)
+        
+        self.lock_fps_chk = QCheckBox("저조도 30FPS 수동 고정")
+        self.lock_fps_chk.setChecked(self.config.get("lock_fps_low_light", False))
+        self.lock_fps_chk.toggled.connect(self._on_lock_fps_toggled)
+        
+        row2.addWidget(self.auto_exp_chk)
+        row2.addSpacing(20)
+        row2.addWidget(self.lock_fps_chk)
+        row2.addStretch()
+        cc_layout.addLayout(row2)
+        
+        # 3행: 카메라 고급 설정 창 열기 버튼
+        adv_cam_btn = QPushButton("📷  카메라 고급 설정 창 열기 (DirectShow Property Page)")
+        adv_cam_btn.setProperty("class", "SecondaryButton")
+        adv_cam_btn.setCursor(Qt.PointingHandCursor)
+        adv_cam_btn.clicked.connect(self._open_cam_adv_settings)
+        cc_layout.addWidget(adv_cam_btn)
+        
+        layout.addWidget(cam_ctrl_card)
+        
+        # 1-3. 하단 대형 START / STOP 토글 버튼 영역
+        btn_card = QFrame()
+        btn_card.setStyleSheet("background-color: transparent;")
+        bc_layout = QVBoxLayout(btn_card)
+        bc_layout.setContentsMargins(0, 2, 0, 0)
+        bc_layout.setAlignment(Qt.AlignCenter)
+        
+        self.start_btn = QPushButton("▶   START TRACKING (F12)")
+        self.start_btn.setObjectName("StartButton")
+        self.start_btn.setCheckable(True)
+        self.start_btn.setCursor(Qt.PointingHandCursor)
+        self.start_btn.setFixedSize(480, 50)
+        
+        # 에메랄드 글로우 드롭 섀도우 효과
+        self.btn_glow = QGraphicsDropShadowEffect(self)
+        self.btn_glow.setBlurRadius(24)
+        self.btn_glow.setColor(QColor(16, 185, 129, 140))
+        self.btn_glow.setOffset(0, 2)
+        self.start_btn.setGraphicsEffect(self.btn_glow)
+        
+        self.start_btn.clicked.connect(self._toggle_tracking_clicked)
+        bc_layout.addWidget(self.start_btn)
+        
+        # 하단 상태 텍스트
+        self.status_text = QLabel("상태: 비활성 (F12를 누르거나 위 버튼을 클릭하여 추적 시작)")
+        self.status_text.setStyleSheet("color: #64748B; font-size: 11px; font-weight: 500; margin-top: 4px;")
+        self.status_text.setAlignment(Qt.AlignCenter)
+        bc_layout.addWidget(self.status_text)
+        
+        layout.addWidget(btn_card)
+        return page
+
+    # ========================================================
+    # 2. Settings Page: 모션 감도 슬라이더 + 단축키 + 프로필 관리
+    # ========================================================
+    def _build_settings_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(24, 16, 24, 16)
+        layout.setSpacing(12)
+        
+        # 상단 타이틀 & 초기화 버튼
+        title_box = QHBoxLayout()
+        st_lbl = QLabel("⚙️ Tracking & Motion Settings")
+        st_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #F8FAFC;")
+        
+        reset_btn = QPushButton("↺  기본값 복원")
+        reset_btn.setProperty("class", "SecondaryButton")
+        reset_btn.setCursor(Qt.PointingHandCursor)
+        reset_btn.clicked.connect(self._on_reset_defaults)
+        
+        title_box.addWidget(st_lbl)
+        title_box.addStretch()
+        title_box.addWidget(reset_btn)
+        layout.addLayout(title_box)
+        
+        # 스크롤 영역
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        
+        content = QWidget()
+        c_layout = QVBoxLayout(content)
+        c_layout.setContentsMargins(0, 0, 8, 0)
+        c_layout.setSpacing(14)
+        c_layout.setAlignment(Qt.AlignTop)  # 위에서부터 자연스럽게 정렬 (아래 여백 허용)
+        
+        # 2-1. 모션 및 감도 컨트롤 카드
+        motion_card = QFrame()
+        motion_card.setProperty("class", "DashboardCard")
+        motion_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        mc_layout = QVBoxLayout(motion_card)
+        mc_layout.setContentsMargins(18, 14, 18, 14)
+        mc_layout.setSpacing(12)
+        
+        mc_title = QLabel("모션 및 감도 컨트롤")
+        mc_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #38BDF8;")
+        mc_layout.addWidget(mc_title)
+        
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(18)
+        grid.setVerticalSpacing(12)
+        
+        # 민감도 X
+        grid.addWidget(QLabel("민감도 X:"), 0, 0)
+        self.sx_badge = QLabel(f"{self.config.get('sensitivity_x', 27)}")
+        self.sx_badge.setStyleSheet("color: #38BDF8; font-weight: bold;")
+        grid.addWidget(self.sx_badge, 0, 1)
+        self.sx_slider = QSlider(Qt.Horizontal)
+        self.sx_slider.setRange(0, 50)
+        self.sx_slider.setValue(int(self.config.get("sensitivity_x", 27)))
+        self.sx_slider.valueChanged.connect(self._on_sx_changed)
+        grid.addWidget(self.sx_slider, 0, 2)
+        
+        # 민감도 Y
+        grid.addWidget(QLabel("민감도 Y:"), 0, 3)
+        self.sy_badge = QLabel(f"{self.config.get('sensitivity_y', 27)}")
+        self.sy_badge.setStyleSheet("color: #38BDF8; font-weight: bold;")
+        grid.addWidget(self.sy_badge, 0, 4)
+        self.sy_slider = QSlider(Qt.Horizontal)
+        self.sy_slider.setRange(0, 50)
+        self.sy_slider.setValue(int(self.config.get("sensitivity_y", 27)))
+        self.sy_slider.valueChanged.connect(self._on_sy_changed)
+        grid.addWidget(self.sy_slider, 0, 5)
+        
+        # 임계값 (Deadzone)
+        grid.addWidget(QLabel("임계값:"), 1, 0)
+        self.th_badge = QLabel(f"{self.config.get('motion_threshold', 2)}")
+        self.th_badge.setStyleSheet("color: #94A3B8; font-weight: bold;")
+        grid.addWidget(self.th_badge, 1, 1)
+        self.th_slider = QSlider(Qt.Horizontal)
+        self.th_slider.setRange(0, 4)
+        self.th_slider.setValue(int(self.config.get("motion_threshold", 2)))
+        self.th_slider.valueChanged.connect(self._on_th_changed)
+        grid.addWidget(self.th_slider, 1, 2)
         
         # 스무딩
-        c_sm = tk.Frame(row1_f, bg=self.card_color)
-        c_sm.grid(row=0, column=1, padx=(5, 0), sticky="ew")
-        init_sm = int(yn_cfg.get("smoothing", 3))
-        self.yn_sm_lbl = tk.Label(c_sm, text=f"스무딩: {init_sm}", font=("Inter", 8), fg=self.text_color, bg=self.card_color)
-        self.yn_sm_lbl.pack(anchor="w")
-        self.yn_sm_scale = tk.Scale(
-            c_sm, from_=0, to=6, resolution=1, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_yn_sm_change
-        )
-        self.yn_sm_scale.set(init_sm)
-        self.yn_sm_scale.pack(fill="x", pady=(1, 0))
+        grid.addWidget(QLabel("스무딩:"), 1, 3)
+        self.sm_badge = QLabel(f"{self.config.get('smoothing', 3)}")
+        self.sm_badge.setStyleSheet("color: #10B981; font-weight: bold;")
+        grid.addWidget(self.sm_badge, 1, 4)
+        self.sm_slider = QSlider(Qt.Horizontal)
+        self.sm_slider.setRange(0, 6)
+        self.sm_slider.setValue(int(self.config.get("smoothing", 3)))
+        self.sm_slider.valueChanged.connect(self._on_sm_changed)
+        grid.addWidget(self.sm_slider, 1, 5)
         
-        # 가속도
-        acc_f = tk.Frame(self.yn_panel, bg=self.card_color)
-        acc_f.pack(fill="x", pady=(0, 6))
-        init_acc = int(yn_cfg.get("acceleration", 5))
-        self.yn_acc_lbl = tk.Label(acc_f, text=f"가속도: {init_acc}", font=("Inter", 8), fg=self.text_color, bg=self.card_color)
-        self.yn_acc_lbl.pack(anchor="w")
-        self.yn_acc_scale = tk.Scale(
-            acc_f, from_=0, to=10, resolution=1, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_yn_acc_change
-        )
-        self.yn_acc_scale.set(init_acc)
-        self.yn_acc_scale.pack(fill="x", pady=(1, 0))
+        # 가속도 (1행 전체 차지)
+        grid.addWidget(QLabel("가속도:"), 2, 0)
+        self.acc_badge = QLabel(f"{self.config.get('acceleration', 5)}")
+        self.acc_badge.setStyleSheet("color: #F59E0B; font-weight: bold;")
+        grid.addWidget(self.acc_badge, 2, 1)
+        self.acc_slider = QSlider(Qt.Horizontal)
+        self.acc_slider.setRange(0, 10)
+        self.acc_slider.setValue(int(self.config.get("acceleration", 5)))
+        self.acc_slider.valueChanged.connect(self._on_accel_changed)
+        grid.addWidget(self.acc_slider, 2, 2, 1, 4)
         
-        # 광량 감지 / 튐 억제 (2열)
-        shock_f = tk.Frame(self.yn_panel, bg=self.card_color)
-        shock_f.pack(fill="x", pady=(0, 2))
-        shock_f.columnconfigure(0, weight=1)
-        shock_f.columnconfigure(1, weight=1)
+        # 광량 감지 & 튐 억제
+        grid.addWidget(QLabel("광량 감지:"), 3, 0)
+        self.il_badge = QLabel(f"{float(self.config.get('illumination_threshold', 10.0)):.1f}")
+        self.il_badge.setStyleSheet("color: #94A3B8; font-weight: bold;")
+        grid.addWidget(self.il_badge, 3, 1)
+        self.il_slider = QSlider(Qt.Horizontal)
+        self.il_slider.setRange(10, 300)
+        self.il_slider.setValue(int(float(self.config.get("illumination_threshold", 10.0)) * 10))
+        self.il_slider.valueChanged.connect(self._on_il_changed)
+        grid.addWidget(self.il_slider, 3, 2)
         
-        # 광량 감지
-        c_il = tk.Frame(shock_f, bg=self.card_color)
-        c_il.grid(row=0, column=0, padx=(0, 5), sticky="ew")
-        init_il = float(yn_cfg.get("illumination_threshold", 10.0))
-        self.yn_il_lbl = tk.Label(c_il, text=f"광량 감지: {init_il}", font=("Inter", 8), fg=self.text_color, bg=self.card_color)
-        self.yn_il_lbl.pack(anchor="w")
-        self.yn_il_scale = tk.Scale(
-            c_il, from_=1.0, to=30.0, resolution=0.5, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_yn_il_change
-        )
-        self.yn_il_scale.set(init_il)
-        self.yn_il_scale.pack(fill="x", pady=(1, 0))
+        grid.addWidget(QLabel("튐 억제:"), 3, 3)
+        self.sp_badge = QLabel(f"{float(self.config.get('spike_threshold', 15.0)):.1f}px")
+        self.sp_badge.setStyleSheet("color: #94A3B8; font-weight: bold;")
+        grid.addWidget(self.sp_badge, 3, 4)
+        self.sp_slider = QSlider(Qt.Horizontal)
+        self.sp_slider.setRange(50, 500)
+        self.sp_slider.setValue(int(float(self.config.get("spike_threshold", 15.0)) * 10))
+        self.sp_slider.valueChanged.connect(self._on_sp_changed)
+        grid.addWidget(self.sp_slider, 3, 5)
         
-        # 튐 억제
-        c_sp = tk.Frame(shock_f, bg=self.card_color)
-        c_sp.grid(row=0, column=1, padx=(5, 0), sticky="ew")
-        init_sp = float(yn_cfg.get("spike_threshold", 15.0))
-        self.yn_sp_lbl = tk.Label(c_sp, text=f"튐 억제: {init_sp}px", font=("Inter", 8), fg=self.text_color, bg=self.card_color)
-        self.yn_sp_lbl.pack(anchor="w")
-        self.yn_sp_scale = tk.Scale(
-            c_sp, from_=5.0, to=50.0, resolution=1.0, orient="horizontal",
-            bg=self.card_color, fg=self.text_color, troughcolor="#0F172A", activebackground=self.accent_color,
-            highlightthickness=0, bd=0, showvalue=False, command=self.on_yn_sp_change
-        )
-        self.yn_sp_scale.set(init_sp)
-        self.yn_sp_scale.pack(fill="x", pady=(1, 0))
+        mc_layout.addLayout(grid)
+        c_layout.addWidget(motion_card)
         
-        # YuNet 기본값 초기화 버튼
-        yn_rst_f = tk.Frame(self.yn_panel, bg=self.card_color)
-        yn_rst_f.pack(fill="x", pady=(4, 0))
-        self.yn_reset_btn = tk.Button(
-            yn_rst_f, text="↺ YuNet 설정 초기화", font=("Segoe UI", 8, "bold"),
-            bg="#334155", fg=self.text_color, activebackground="#475569", activeforeground=self.text_color,
-            bd=0, padx=6, pady=4, relief="flat", cursor="hand2", command=self.reset_yunet_defaults
-        )
-        self.yn_reset_btn.pack(side="right")
-
-    def _switch_panel(self, engine_name):
-        """엔진에 따라 패널을 동적으로 교체 표시"""
-        if engine_name == "yunet":
-            self.mp_panel.pack_forget()
-            self.yn_panel.pack(fill="x", padx=20, pady=(0, 6))
-        else:
-            self.yn_panel.pack_forget()
-            self.mp_panel.pack(fill="x", padx=20, pady=(0, 6))
-
-    def _build_common_controls(self):
-        """공통 시스템 및 카메라 제어 UI 구축"""
-        # 단축키 설정 영역
-        self.hotkey_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
-        self.hotkey_frame.pack(fill="x", padx=20, pady=(0, 8))
+        # 2-2. 단축키 설정 카드
+        hk_card = QFrame()
+        hk_card.setProperty("class", "DashboardCard")
+        hk_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        hc_layout = QVBoxLayout(hk_card)
+        hc_layout.setContentsMargins(18, 12, 18, 12)
+        hc_layout.setSpacing(8)
         
-        self.hotkey_lbl = tk.Label(self.hotkey_frame, text=f"단축키: {self.config['tracking_toggle_key'].upper()}", font=("Inter", 8), fg=self.text_color, bg=self.card_color)
-        self.hotkey_lbl.pack(side="left", anchor="w")
+        hc_title = QLabel("단축키 설정")
+        hc_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #38BDF8;")
+        hc_layout.addWidget(hc_title)
         
-        self.hotkey_btn = tk.Button(
-            self.hotkey_frame, text="단축키 변경", font=("Segoe UI", 8, "bold"),
-            bg="#334155", fg=self.text_color, activebackground="#475569", activeforeground=self.text_color,
-            bd=0, padx=8, pady=3, relief="flat", cursor="hand2", command=self.start_hotkey_recording
-        )
-        self.hotkey_btn.pack(side="right")
-
-        # 카메라 상세 제어 프레임
-        self.cam_ctrl_frame = tk.Frame(self.ctrl_frame, bg=self.card_color)
-        self.cam_ctrl_frame.pack(fill="x", padx=20, pady=(0, 8))
+        hk_row = QHBoxLayout()
+        self.hk_info_lbl = QLabel(f"단축키: {self.config.get('tracking_toggle_key', 'F12').upper()}")
+        self.hk_info_lbl.setStyleSheet("color: #F8FAFC; font-weight: 600; font-size: 12px;")
         
-        # 0. 카메라 선택 드롭다운
-        self.cam_select_frame = tk.Frame(self.cam_ctrl_frame, bg=self.card_color)
-        self.cam_select_frame.pack(fill="x", pady=(0, 6))
+        self.hotkey_btn = QPushButton("단축키 변경")
+        self.hotkey_btn.setProperty("class", "SecondaryButton")
+        self.hotkey_btn.setCursor(Qt.PointingHandCursor)
+        self.hotkey_btn.clicked.connect(self._start_hotkey_recording)
         
-        self.cam_select_label = tk.Label(
-            self.cam_select_frame, text="카메라 선택:", font=("Segoe UI", 8, "bold"),
-            fg=self.text_color, bg=self.card_color
-        )
-        self.cam_select_label.pack(side="left", padx=(0, 5))
+        hk_row.addWidget(self.hk_info_lbl)
+        hk_row.addStretch()
+        hk_row.addWidget(self.hotkey_btn)
+        hc_layout.addLayout(hk_row)
+        c_layout.addWidget(hk_card)
         
-        self.camera_list = self.scan_cameras()
-        combo_values = [f"카메라 {idx}" for idx in self.camera_list]
-        self.cam_combo = ttk.Combobox(self.cam_select_frame, values=combo_values, state="readonly", width=12)
+        # 2-3. 프로필 저장 및 관리 카드 (단축키 아래 신규 추가!)
+        prof_card = QFrame()
+        prof_card.setProperty("class", "DashboardCard")
+        prof_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        pc_layout = QVBoxLayout(prof_card)
+        pc_layout.setContentsMargins(18, 14, 18, 14)
+        pc_layout.setSpacing(10)
         
-        current_id = self.config.get("camera_id", 0)
-        try:
-            current_index = self.camera_list.index(current_id)
-            self.cam_combo.current(current_index)
-        except ValueError:
-            self.cam_combo.set(f"카메라 {current_id}")
-            
-        self.cam_combo.pack(side="left", fill="x", expand=True)
-        self.cam_combo.bind("<<ComboboxSelected>>", self.on_camera_select)
+        pc_title = QLabel("💾 설정 프로필 관리 (Profiles)")
+        pc_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #38BDF8;")
+        pc_layout.addWidget(pc_title)
         
-        # 0-1. 해상도 및 FPS 선택
-        self.res_fps_frame = tk.Frame(self.cam_ctrl_frame, bg=self.card_color)
-        self.res_fps_frame.pack(fill="x", pady=(0, 6))
+        # 1행: 프로필 선택 콤보박스
+        p_row1 = QHBoxLayout()
+        p_lbl = QLabel("현재 프로필:")
+        p_lbl.setStyleSheet("color: #94A3B8; font-size: 12px;")
         
-        self.res_label = tk.Label(self.res_fps_frame, text="해상도:", font=("Segoe UI", 8, "bold"), fg=self.text_color, bg=self.card_color)
-        self.res_label.pack(side="left", padx=(0, 3))
+        self.profile_combo = QComboBox()
+        self._refresh_profile_combo()
+        self.profile_combo.currentTextChanged.connect(self._on_profile_selected)
         
-        res_options = ["320x240", "640x360", "640x480", "1280x720", "1920x1080"]
-        self.res_combo = ttk.Combobox(self.res_fps_frame, values=res_options, state="readonly", width=9)
-        current_res = f"{self.config.get('camera_width', 640)}x{self.config.get('camera_height', 480)}"
-        if current_res not in res_options:
-            res_options.append(current_res)
-            self.res_combo['values'] = res_options
-        self.res_combo.set(current_res)
-        self.res_combo.pack(side="left", padx=(0, 10))
-        self.res_combo.bind("<<ComboboxSelected>>", self.on_res_fps_select)
+        p_row1.addWidget(p_lbl)
+        p_row1.addWidget(self.profile_combo, 1)
+        pc_layout.addLayout(p_row1)
         
-        self.fps_label = tk.Label(self.res_fps_frame, text="FPS:", font=("Segoe UI", 8, "bold"), fg=self.text_color, bg=self.card_color)
-        self.fps_label.pack(side="left", padx=(0, 3))
+        # 2행: 프로필 조작 버튼들 (새 프로필 추가, 현재 프로필 덮어쓰기, 삭제)
+        p_row2 = QHBoxLayout()
         
-        fps_options = ["30", "60", "90", "120"]
-        self.fps_combo = ttk.Combobox(self.res_fps_frame, values=fps_options, state="readonly", width=4)
-        current_fps = str(self.config.get("target_fps", 30))
-        if current_fps not in fps_options:
-            fps_options.append(current_fps)
-            self.fps_combo['values'] = fps_options
-        self.fps_combo.set(current_fps)
-        self.fps_combo.pack(side="left", expand=True)
-        self.fps_combo.bind("<<ComboboxSelected>>", self.on_res_fps_select)
+        save_new_btn = QPushButton("➕ 새 프로필 저장")
+        save_new_btn.setProperty("class", "PrimaryActionBtn")
+        save_new_btn.setCursor(Qt.PointingHandCursor)
+        save_new_btn.clicked.connect(self._on_save_new_profile)
         
-        # 1. 자동 노출 체크박스
-        auto_exp_default = self.config.get("auto_exposure", not self.config.get("lock_fps_low_light", False))
-        self.auto_exposure_var = tk.BooleanVar(value=auto_exp_default)
-        self.auto_exp_chk = tk.Checkbutton(
-            self.cam_ctrl_frame, text="카메라 자동 노출 (Auto Exposure)", 
-            variable=self.auto_exposure_var, command=self.on_auto_exposure_toggle,
-            bg=self.card_color, fg=self.text_color, selectcolor="#1E293B",
-            activebackground=self.card_color, activeforeground=self.text_color,
-            font=("Segoe UI", 8), bd=0, highlightthickness=0
-        )
-        self.auto_exp_chk.pack(anchor="w", pady=(0, 4))
-
-        # 활성화 토글 버튼
-        self.toggle_btn = tk.Button(
-            self.ctrl_frame, text=f"추적 시작 / 중지 ({self.config['tracking_toggle_key'].upper()})", font=("Inter", 10, "bold"),
-            bg="#3B82F6", fg="#FFFFFF", activebackground="#2563EB", activeforeground="#FFFFFF",
-            bd=0, padx=8, pady=8, relief="flat", cursor="hand2", command=self.manual_toggle
-        )
-        self.toggle_btn.pack(fill="x", padx=20, pady=(4, 8))
+        overwrite_btn = QPushButton("💾 현재 프로필 덮어쓰기")
+        overwrite_btn.setProperty("class", "SecondaryButton")
+        overwrite_btn.setCursor(Qt.PointingHandCursor)
+        overwrite_btn.clicked.connect(self._on_overwrite_profile)
         
-        self.recording_hotkey = False
-
-    def on_engine_select(self, event=None):
-        selected_text = self.engine_combo.get()
-        engine_name = "yunet" if "YuNet" in selected_text else "mediapipe"
+        delete_btn = QPushButton("🗑️ 삭제")
+        delete_btn.setProperty("class", "DangerBtn")
+        delete_btn.setCursor(Qt.PointingHandCursor)
+        delete_btn.clicked.connect(self._on_delete_profile)
         
-        if self.config.get("tracking_engine") != engine_name:
-            self.config["tracking_engine"] = engine_name
-            config.save_config(self.config)
-            self.tracker.set_tracking_engine(engine_name)
-            self._switch_panel(engine_name)
-            print(f"[GUI] 트래킹 엔진이 '{engine_name}'(으)로 변경되었습니다.")
+        p_row2.addWidget(save_new_btn)
+        p_row2.addWidget(overwrite_btn)
+        p_row2.addWidget(delete_btn)
+        pc_layout.addLayout(p_row2)
+        
+        c_layout.addWidget(prof_card)
+        c_layout.addStretch()  # 아래 여백을 자연스럽게 남김!
+        
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+        return page
 
     # ========================================================
-    # MediaPipe Head Pose 슬라이더 이벤트 핸들러
+    # 3. Help Page
     # ========================================================
-    def on_mp_sx_change(self, val):
-        v = int(float(val))
-        self.config["mediapipe"]["sensitivity_x"] = v
-        self.mp_sx_lbl.configure(text=f"민감도 X (Yaw): {v}")
-        config.save_config(self.config)
-
-    def on_mp_sy_change(self, val):
-        v = int(float(val))
-        self.config["mediapipe"]["sensitivity_y"] = v
-        self.mp_sy_lbl.configure(text=f"민감도 Y (Pitch): {v}")
-        config.save_config(self.config)
-
-    def on_mp_k_change(self, val):
-        v = int(float(val))
-        self.config["mediapipe"]["kalman_strength"] = v
-        self.mp_k_lbl.configure(text=f"1. 칼만 필터: {v}")
-        config.save_config(self.config)
-
-    def on_mp_as_change(self, val):
-        v = int(float(val))
-        self.config["mediapipe"]["adaptive_smoothing"] = v
-        self.mp_as_lbl.configure(text=f"2. 적응 스무딩: {v}")
-        config.save_config(self.config)
-
-    def on_mp_dz_change(self, val):
-        v = round(float(val), 2)
-        self.config["mediapipe"]["deadzone"] = v
-        self.mp_dz_lbl.configure(text=f"3. 각도 데드존: {v}°")
-        config.save_config(self.config)
-
-    def on_mp_cp_change(self, val):
-        v = round(float(val), 2)
-        self.config["mediapipe"]["curve_power"] = v
-        self.mp_cp_lbl.configure(text=f"4. 비선형 커브: {v}")
-        config.save_config(self.config)
-
-    def on_mp_acc_change(self, val):
-        v = int(float(val))
-        self.config["mediapipe"]["acceleration"] = v
-        self.mp_acc_lbl.configure(text=f"5. 모션 가속도: {v}")
-        config.save_config(self.config)
-
-    def reset_mediapipe_defaults(self):
-        """MediaPipe의 모든 설정값 및 필터 상태를 초기 기본값으로 리셋합니다."""
-        defaults = config.DEFAULT_CONFIG["mediapipe"].copy()
-        self.config["mediapipe"] = defaults
-        config.save_config(self.config)
+    def _build_help_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(12)
         
-        # 슬라이더 및 라벨 리셋
-        self.mp_sx_scale.set(defaults["sensitivity_x"])
-        self.mp_sy_scale.set(defaults["sensitivity_y"])
-        self.mp_k_scale.set(defaults["kalman_strength"])
-        self.mp_as_scale.set(defaults["adaptive_smoothing"])
-        self.mp_dz_scale.set(defaults["deadzone"])
-        self.mp_cp_scale.set(defaults["curve_power"])
-        self.mp_acc_scale.set(defaults["acceleration"])
+        title = QLabel("Face Tracker 사용 안내")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #F8FAFC;")
+        layout.addWidget(title)
         
-        self.mp_sx_lbl.configure(text=f"민감도 X (Yaw): {defaults['sensitivity_x']}")
-        self.mp_sy_lbl.configure(text=f"민감도 Y (Pitch): {defaults['sensitivity_y']}")
-        self.mp_k_lbl.configure(text=f"1. 칼만 필터: {defaults['kalman_strength']}")
-        self.mp_as_lbl.configure(text=f"2. 적응 스무딩: {defaults['adaptive_smoothing']}")
-        self.mp_dz_lbl.configure(text=f"3. 각도 데드존: {defaults['deadzone']}°")
-        self.mp_cp_lbl.configure(text=f"4. 비선형 커브: {defaults['curve_power']}")
-        self.mp_acc_lbl.configure(text=f"5. 모션 가속도: {defaults['acceleration']}")
+        card = QFrame()
+        card.setProperty("class", "DashboardCard")
+        c_layout = QVBoxLayout(card)
+        c_layout.setContentsMargins(18, 16, 18, 16)
+        c_layout.setSpacing(10)
         
-        # 트래커 내부 필터 상태 완벽 리셋
-        if hasattr(self.tracker, "mp_pipeline"):
-            self.tracker.mp_pipeline.reset()
+        tips = [
+            "🎯 <b>마우스 추적 시작/일시정지</b>: Home 탭의 <code>START TRACKING</code> 버튼을 클릭하거나 <code>F12</code> 단축키를 누르세요.",
+            "📷 <b>카메라 퀵 제어</b>: Home 탭에서 웹캠 이름(로지텍 등)을 확인하고, 해상도(640x480/1280x720)와 노출을 바로 조작할 수 있습니다.",
+            "💾 <b>프로필 관리</b>: Settings 탭에서 '게임용', '작업용', '정밀조준' 등 사용자만의 설정값을 프로필로 저장하고 언제든 불러올 수 있습니다."
+        ]
+        
+        for t in tips:
+            lbl = QLabel(t)
+            lbl.setStyleSheet("color: #94A3B8; font-size: 12px; line-height: 1.4;")
+            lbl.setWordWrap(True)
+            c_layout.addWidget(lbl)
             
-        print("[GUI] MediaPipe 설정 및 필터가 기본값으로 초기화되었습니다.")
+        layout.addWidget(card)
+        layout.addStretch()
+        return page
 
     # ========================================================
-    # YuNet 슬라이더 이벤트 핸들러
+    # 프로필 관리 로직
     # ========================================================
-    def on_yn_sx_change(self, val):
-        v = int(float(val))
-        self.config["yunet"]["sensitivity_x"] = v
-        self.yn_sx_lbl.configure(text=f"민감도 X: {v}")
-        config.save_config(self.config)
+    def _refresh_profile_combo(self):
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        profiles = self.config.get("profiles", {})
+        cur = self.config.get("current_profile", "기본")
+        for pname in profiles.keys():
+            self.profile_combo.addItem(pname)
+        self.profile_combo.setCurrentText(cur)
+        self.profile_combo.blockSignals(False)
 
-    def on_yn_sy_change(self, val):
-        v = int(float(val))
-        self.config["yunet"]["sensitivity_y"] = v
-        self.yn_sy_lbl.configure(text=f"민감도 Y: {v}")
-        config.save_config(self.config)
-
-    def on_yn_th_change(self, val):
-        v = int(float(val))
-        self.config["yunet"]["motion_threshold"] = v
-        self.yn_th_lbl.configure(text=f"임계값: {v}")
-        config.save_config(self.config)
-
-    def on_yn_sm_change(self, val):
-        v = int(float(val))
-        self.config["yunet"]["smoothing"] = v
-        self.yn_sm_lbl.configure(text=f"스무딩: {v}")
-        config.save_config(self.config)
-
-    def on_yn_acc_change(self, val):
-        v = int(float(val))
-        self.config["yunet"]["acceleration"] = v
-        self.yn_acc_lbl.configure(text=f"가속도: {v}")
-        if hasattr(self.tracker, "yunet_filter"):
-            self.tracker.yunet_filter._build_accel_array()
-        config.save_config(self.config)
-
-    def on_yn_il_change(self, val):
-        v = round(float(val), 1)
-        self.config["yunet"]["illumination_threshold"] = v
-        self.yn_il_lbl.configure(text=f"광량 감지: {v}")
-        config.save_config(self.config)
-
-    def on_yn_sp_change(self, val):
-        v = round(float(val), 1)
-        self.config["yunet"]["spike_threshold"] = v
-        self.yn_sp_lbl.configure(text=f"튐 억제: {v}px")
-        config.save_config(self.config)
-
-    def reset_yunet_defaults(self):
-        """YuNet의 모든 설정값 및 필터 상태를 초기 기본값으로 리셋합니다."""
-        defaults = config.DEFAULT_CONFIG["yunet"].copy()
-        self.config["yunet"] = defaults
-        config.save_config(self.config)
-        
-        # 슬라이더 및 라벨 리셋
-        self.yn_sx_scale.set(defaults["sensitivity_x"])
-        self.yn_sy_scale.set(defaults["sensitivity_y"])
-        self.yn_th_scale.set(defaults["motion_threshold"])
-        self.yn_sm_scale.set(defaults["smoothing"])
-        self.yn_acc_scale.set(defaults["acceleration"])
-        self.yn_il_scale.set(defaults["illumination_threshold"])
-        self.yn_sp_scale.set(defaults["spike_threshold"])
-        
-        self.yn_sx_lbl.configure(text=f"민감도 X: {defaults['sensitivity_x']}")
-        self.yn_sy_lbl.configure(text=f"민감도 Y: {defaults['sensitivity_y']}")
-        self.yn_th_lbl.configure(text=f"임계값: {defaults['motion_threshold']}")
-        self.yn_sm_lbl.configure(text=f"스무딩: {defaults['smoothing']}")
-        self.yn_acc_lbl.configure(text=f"가속도: {defaults['acceleration']}")
-        self.yn_il_lbl.configure(text=f"광량 감지: {defaults['illumination_threshold']}")
-        self.yn_sp_lbl.configure(text=f"튐 억제: {defaults['spike_threshold']}px")
-        
-        if hasattr(self.tracker, "yunet_filter"):
-            self.tracker.yunet_filter.config = self.config["yunet"]
-            self.tracker.yunet_filter.reset()
-            self.tracker.yunet_filter._build_accel_array()
-            
-        print("[GUI] YuNet 설정 및 필터가 기본값으로 초기화되었습니다.")
-
-    def start_poll_loop(self):
-        self.poll_frame_queue()
-
-    def poll_frame_queue(self):
-        try:
-            latest_data = None
-            while not self.frame_queue.empty():
-                try:
-                    latest_data = self.frame_queue.get_nowait()
-                except Exception:
-                    break
-            
-            if latest_data is not None:
-                if len(latest_data) == 8:
-                    frame, tracking_enabled, nose_x, nose_y, fps, w, h, engine_name = latest_data
-                else:
-                    frame, tracking_enabled, nose_x, nose_y, fps, w, h = latest_data[:7]
-                    engine_name = "MediaPipe"
-                self.update_frame(frame, tracking_enabled, nose_x, nose_y, fps, w, h, engine_name)
-        except Exception as e:
-            print(f"[GUI] 폴링 루프 에러: {e}")
-        finally:
-            if self.root.winfo_exists():
-                self.root.after(15, self.poll_frame_queue)
-
-    def update_frame(self, cv_frame, tracking_enabled, nose_x, nose_y, fps, w, h, engine_name="MediaPipe"):
-        """
-        프레임 렌더링 최적화 (Tkinter PhotoImage 메모리 안정화)
-        """
-        self.info_label.configure(text=f"FPS: {fps} | {engine_name} | {w}x{h}")
-
-        display_w = 640
-        display_h = int(640 * (h / w)) if w > 0 else 360
-        
-        if int(self.canvas.cget("width")) != display_w or int(self.canvas.cget("height")) != display_h:
-            self.canvas.configure(width=display_w, height=display_h)
-            self.image_id = None
-            self.canvas.delete("all")
-            self.photo = None
-
-        resized = cv2.resize(cv_frame, (display_w, display_h))
-        rgb_image = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        pil_img = Image.fromarray(rgb_image)
-        
-        # PhotoImage 안전 갱신
-        self.photo = ImageTk.PhotoImage(image=pil_img)
-        
-        if self.image_id is None:
-            self.canvas.delete("all")
-            self.image_id = self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
-        else:
-            self.canvas.itemconfig(self.image_id, image=self.photo)
-            
-        del pil_img
-        del rgb_image
-        del resized
-        
-        hotkey = self.config.get('tracking_toggle_key', 'F12').upper()
-        if tracking_enabled:
-            accent = self.mp_accent_color if engine_name == "MediaPipe" else self.accent_color
-            self.cam_frame.configure(highlightbackground=accent)
-            self.status_label.configure(text=f"[{engine_name}] 추적 활성화 중...", fg=accent)
-            self.toggle_btn.configure(bg=self.inactive_color, text=f"추적 일시정지 ({hotkey})")
-        else:
-            self.cam_frame.configure(highlightbackground="#334155")
-            self.status_label.configure(text=f"비활성 상태 ({hotkey}키로 활성화)", fg=self.inactive_color)
-            self.toggle_btn.configure(bg=self.accent_color, text=f"추적 시작 ({hotkey})")
-
-    def manual_toggle(self):
-        new_state = not self.tracker.tracking_enabled
-        self.tracker.set_tracking(new_state)
-
-    def start_hotkey_recording(self):
-        self.recording_hotkey = True
-        self.hotkey_btn.configure(text="키를 누르세요...", bg=self.inactive_color)
-        self.root.bind("<Key>", self.record_hotkey)
-        self.hotkey_btn.focus_set()
-
-    def record_hotkey(self, event):
-        if not self.recording_hotkey:
+    def _on_profile_selected(self, pname):
+        if not pname:
             return
+        profiles = self.config.get("profiles", {})
+        if pname in profiles:
+            p_data = profiles[pname]
+            self.config["current_profile"] = pname
             
-        keysym = event.keysym.lower()
-        KEYSYM_MAP = {
-            "f1": "f1", "f2": "f2", "f3": "f3", "f4": "f4", "f5": "f5",
-            "f6": "f6", "f7": "f7", "f8": "f8", "f9": "f9", "f10": "f10",
-            "f11": "f11", "f12": "f12",
-            "insert": "insert", "delete": "delete",
-            "home": "home", "end": "end",
-            "prior": "page_up", "next": "page_down",
-            "space": "space", "escape": "esc",
-            "plus": "+", "kp_add": "+",
-            "minus": "-", "kp_subtract": "-",
-            "asterisk": "*", "kp_multiply": "*",
-            "slash": "/", "kp_divide": "/",
-            "return": "enter", "tab": "tab",
-            "backspace": "backspace"
-        }
-        
-        final_key = KEYSYM_MAP.get(keysym, keysym)
-        self.config["tracking_toggle_key"] = final_key
-        config.save_config(self.config)
-        
-        self.hotkey_lbl.configure(text=f"단축키: {final_key.upper()}")
-        self.status_label.configure(text=f"비활성 상태 ({final_key.upper()}키로 활성화)")
-        self.toggle_btn.configure(text=f"추적 시작 / 중지 ({final_key.upper()})")
-        
-        self.recording_hotkey = False
-        self.hotkey_btn.configure(text="단축키 변경", bg="#334155")
-        self.root.unbind("<Key>")
-
-    def on_auto_exposure_toggle(self):
-        val = self.auto_exposure_var.get()
-        self.config["auto_exposure"] = val
-        self.config["lock_fps_low_light"] = not val
-        config.save_config(self.config)
-        self.tracker.set_auto_exposure(val)
-
-    def scan_cameras(self):
-        current_id = self.config.get("camera_id", 0)
-        available = [current_id]
-        backend_str = self.config.get("camera_backend", "DSHOW").upper()
-        backend = cv2.CAP_MSMF if backend_str == "MSMF" else (cv2.CAP_ANY if backend_str == "AUTO" else cv2.CAP_DSHOW)
+            # 현재 슬라이더 및 config에 프로필 데이터 적용
+            for k, v in p_data.items():
+                self.config[k] = v
+            config.save_config(self.config)
             
-        for i in range(5):
-            if i == current_id:
-                continue
-            cap = cv2.VideoCapture(i, backend)
-            if cap.isOpened():
-                available.append(i)
-                cap.release()
+            # UI 슬라이더 업데이트 (블록 시그널 방지하면서 반영)
+            self.sx_slider.setValue(int(p_data.get("sensitivity_x", 27)))
+            self.sy_slider.setValue(int(p_data.get("sensitivity_y", 27)))
+            self.th_slider.setValue(int(p_data.get("motion_threshold", 2)))
+            self.sm_slider.setValue(int(p_data.get("smoothing", 3)))
+            self.acc_slider.setValue(int(p_data.get("acceleration", 5)))
+            self.il_slider.setValue(int(float(p_data.get("illumination_threshold", 10.0)) * 10))
+            self.sp_slider.setValue(int(float(p_data.get("spike_threshold", 15.0)) * 10))
+            
+            self.sx_badge.setText(str(p_data.get("sensitivity_x", 27)))
+            self.sy_badge.setText(str(p_data.get("sensitivity_y", 27)))
+            self.th_badge.setText(str(p_data.get("motion_threshold", 2)))
+            self.sm_badge.setText(str(p_data.get("smoothing", 3)))
+            self.acc_badge.setText(str(p_data.get("acceleration", 5)))
+            self.il_badge.setText(f"{float(p_data.get('illumination_threshold', 10.0)):.1f}")
+            self.sp_badge.setText(f"{float(p_data.get('spike_threshold', 15.0)):.1f}px")
+            
+            if hasattr(self.tracker, "yunet_filter"):
+                self.tracker.yunet_filter.config = self.config
+                self.tracker.yunet_filter.reset()
+                self.tracker.yunet_filter._build_accel_array()
                 
-        return sorted(list(set(available)))
+            print(f"[프로필] '{pname}' 프로필이 적용되었습니다.")
 
-    def on_camera_select(self, event):
-        selected_str = self.cam_combo.get()
-        try:
-            selected_idx = int(selected_str.split(" ")[1])
-            if self.config.get("camera_id") != selected_idx:
-                self.config["camera_id"] = selected_idx
+    def _show_dark_info(self, title, text):
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setText(text)
+        box.setStyleSheet("""
+            QMessageBox { background-color: #151D2A; border: 1px solid #233044; border-radius: 10px; }
+            QLabel { color: #F8FAFC; font-size: 13px; font-weight: 500; }
+            QPushButton { background-color: #0284C7; color: #FFFFFF; font-size: 12px; font-weight: bold; border-radius: 6px; padding: 6px 18px; min-width: 60px; }
+            QPushButton:hover { background-color: #0369A1; }
+        """)
+        box.exec()
+
+    def _show_dark_warning(self, title, text):
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setText(text)
+        box.setIcon(QMessageBox.Warning)
+        box.setStyleSheet("""
+            QMessageBox { background-color: #151D2A; border: 1px solid #233044; border-radius: 10px; }
+            QLabel { color: #F8FAFC; font-size: 13px; font-weight: 500; }
+            QPushButton { background-color: #D97706; color: #FFFFFF; font-size: 12px; font-weight: bold; border-radius: 6px; padding: 6px 18px; min-width: 60px; }
+            QPushButton:hover { background-color: #B45309; }
+        """)
+        box.exec()
+
+    def _show_dark_confirm(self, title, text):
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setText(text)
+        box.setIcon(QMessageBox.Question)
+        box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        yes_btn = box.button(QMessageBox.Yes)
+        no_btn = box.button(QMessageBox.No)
+        if yes_btn:
+            yes_btn.setText("예")
+        if no_btn:
+            no_btn.setText("아니오")
+        box.setStyleSheet("""
+            QMessageBox { background-color: #151D2A; border: 1px solid #233044; border-radius: 10px; }
+            QLabel { color: #F8FAFC; font-size: 13px; font-weight: 500; }
+            QPushButton { background-color: #334155; color: #F8FAFC; font-size: 12px; font-weight: 600; border-radius: 6px; padding: 6px 18px; min-width: 60px; }
+            QPushButton:hover { background-color: #475569; }
+        """)
+        return box.exec() == QMessageBox.Yes
+
+    def _on_save_new_profile(self):
+        dlg = DarkInputDialog(self, "새 프로필 저장", "저장할 프로필 이름을 입력하세요:")
+        if dlg.exec() == QDialog.Accepted:
+            pname = dlg.get_text().strip()
+            if pname:
+                profiles = self.config.setdefault("profiles", {})
+                profiles[pname] = config.get_current_profile_data(self.config)
+                self.config["current_profile"] = pname
                 config.save_config(self.config)
-                print(f"[GUI] 카메라가 인덱스 {selected_idx}로 변경되었습니다.")
-                import tkinter.messagebox as messagebox
-                messagebox.showinfo("설정 변경됨", "카메라 변경이 저장되었습니다.\n프로그램을 재시작해야 적용됩니다.")
-        except Exception as e:
-            print(f"카메라 선택 이벤트 처리 중 오류: {e}")
+                self._refresh_profile_combo()
+                self._show_dark_info("성공", f"'{pname}' 프로필이 안전하게 저장되었습니다!")
 
-    def on_res_fps_select(self, event=None):
-        res_str = self.res_combo.get()
-        fps_str = self.fps_combo.get()
-        changed = False
+    def _on_overwrite_profile(self):
+        cur_name = self.profile_combo.currentText()
+        if not cur_name:
+            return
+        profiles = self.config.setdefault("profiles", {})
+        profiles[cur_name] = config.get_current_profile_data(self.config)
+        config.save_config(self.config)
+        self._show_dark_info("성공", f"'{cur_name}' 프로필에 현재 설정값이 저장되었습니다!")
+
+    def _on_delete_profile(self):
+        cur_name = self.profile_combo.currentText()
+        if cur_name == "기본":
+            self._show_dark_warning("경고", "'기본' 프로필은 삭제할 수 없습니다.")
+            return
         
+        if self._show_dark_confirm("확인", f"'{cur_name}' 프로필을 정말 삭제하시겠습니까?"):
+            profiles = self.config.get("profiles", {})
+            if cur_name in profiles:
+                del profiles[cur_name]
+                self.config["current_profile"] = "기본"
+                config.save_config(self.config)
+                self._refresh_profile_combo()
+                self._on_profile_selected("기본")
+
+    # ========================================================
+    # 이벤트 핸들러 및 슬롯
+    # ========================================================
+    def _toggle_tracking_clicked(self):
+        new_state = self.start_btn.isChecked()
+        self.tracker.set_tracking(new_state)
+        self.sync_tracking_ui(new_state)
+
+    @Slot(bool)
+    def sync_tracking_ui(self, enabled):
+        """전역 핫키(F12) 또는 버튼 클릭 시 UI 상태 100% 동기화"""
+        self.start_btn.blockSignals(True)
+        self.start_btn.setChecked(enabled)
+        self.start_btn.blockSignals(False)
+        
+        if enabled:
+            self.start_btn.setText(f"⏸   추적 일시정지 ({self.config.get('tracking_toggle_key', 'F12').upper()})")
+            self.btn_glow.setColor(QColor(239, 68, 68, 160))
+            self.status_text.setText("상태: ● 추적 활성화 중 (코끝 추적 동작 중)")
+            self.status_text.setStyleSheet("color: #34D399; font-size: 11px; font-weight: bold; margin-top: 4px;")
+            self.badge_detected.setText("추적 활성화 중...")
+            self.badge_detected.setStyleSheet("""
+                background-color: #064E3B; color: #34D399;
+                font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 4px;
+            """)
+        else:
+            self.start_btn.setText(f"▶   START TRACKING ({self.config.get('tracking_toggle_key', 'F12').upper()})")
+            self.btn_glow.setColor(QColor(16, 185, 129, 140))
+            self.status_text.setText("상태: 비활성 (F12를 누르거나 위 버튼을 클릭하여 추적 시작)")
+            self.status_text.setStyleSheet("color: #64748B; font-size: 11px; font-weight: 500; margin-top: 4px;")
+            self.badge_detected.setText("추적 대기 중...")
+            self.badge_detected.setStyleSheet("""
+                background-color: #2A1414; color: #EF4444;
+                font-size: 10px; font-weight: bold; padding: 3px 10px; border-radius: 4px;
+            """)
+
+    @Slot(QImage, bool, int, int, int, int, int)
+    def update_video_frame(self, q_img, tracking_enabled, nose_x, nose_y, fps, w, h):
+        pixmap = QPixmap.fromImage(q_img)
+        scaled_pix = pixmap.scaled(self.video_canvas.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.video_canvas.setPixmap(scaled_pix)
+        
+        self.cam_fps_lbl.setText(f"FPS: {fps} | {w}x{h}")
+        self.cam_name_lbl.setText(f"Device: {self._get_current_cam_name()}")
+
+    # 슬라이더 변경 핸들러들
+    def _on_sx_changed(self, val):
+        self.config["sensitivity_x"] = val
+        self.sx_badge.setText(str(val))
+        config.save_config(self.config)
+
+    def _on_sy_changed(self, val):
+        self.config["sensitivity_y"] = val
+        self.sy_badge.setText(str(val))
+        config.save_config(self.config)
+
+    def _on_th_changed(self, val):
+        self.config["motion_threshold"] = val
+        self.th_badge.setText(str(val))
+        config.save_config(self.config)
+
+    def _on_sm_changed(self, val):
+        self.config["smoothing"] = val
+        self.sm_badge.setText(str(val))
+        config.save_config(self.config)
+
+    def _on_accel_changed(self, val):
+        self.config["acceleration"] = val
+        self.acc_badge.setText(str(val))
+        if hasattr(self.tracker, "yunet_filter"):
+            self.tracker.yunet_filter._build_accel_array()
+        config.save_config(self.config)
+
+    def _on_il_changed(self, val):
+        real_val = round(val / 10.0, 1)
+        self.config["illumination_threshold"] = real_val
+        self.il_badge.setText(f"{real_val:.1f}")
+        config.save_config(self.config)
+
+    def _on_sp_changed(self, val):
+        real_val = round(val / 10.0, 1)
+        self.config["spike_threshold"] = real_val
+        self.sp_badge.setText(f"{real_val:.1f}px")
+        config.save_config(self.config)
+
+    def _on_camera_changed(self, combo_idx):
+        if combo_idx < 0 or combo_idx >= len(self.camera_device_list):
+            return
+        cid, cname = self.camera_device_list[combo_idx]
+        if cid != self.config.get("camera_id", 0):
+            print(f"[카메라 전환] 장치 선택: {cname} (ID: {cid})")
+            self.config["camera_id"] = cid
+            config.save_config(self.config)
+            self.cam_name_lbl.setText(f"Device: {cname}")
+            self._restart_camera()
+
+    def _on_resolution_changed(self, txt):
         try:
-            w_str, h_str = res_str.split("x")
-            w, h = int(w_str), int(h_str)
-            if self.config.get("camera_width") != w or self.config.get("camera_height") != h:
+            w, h = map(int, txt.split('x'))
+            if w != self.config.get("camera_width", 640) or h != self.config.get("camera_height", 480):
                 self.config["camera_width"] = w
                 self.config["camera_height"] = h
-                changed = True
-        except Exception:
-            pass
-            
-        try:
-            fps = int(fps_str)
-            if self.config.get("target_fps") != fps:
-                self.config["target_fps"] = fps
-                changed = True
-        except Exception:
-            pass
-            
-        if changed:
-            config.save_config(self.config)
-            print(f"[GUI] 해상도 {res_str}, FPS {fps_str} 로 변경되었습니다.")
-            import tkinter.messagebox as messagebox
-            messagebox.showinfo("설정 변경됨", "해상도 및 FPS 설정이 저장되었습니다.\n프로그램을 재시작해야 새 설정으로 카메라가 초기화됩니다.")
+                config.save_config(self.config)
+                self._restart_camera()
+        except Exception as e:
+            print(f"해상도 파싱 에러: {e}")
 
-    def on_close(self):
-        self.tracker.stop_tracker()
-        self.root.destroy()
+    def _on_fps_changed(self, txt):
+        fps_val = int(txt)
+        if fps_val != self.config.get("target_fps", 30):
+            self.config["target_fps"] = fps_val
+            config.save_config(self.config)
+            self._restart_camera()
+
+    def _on_auto_exp_toggled(self, checked):
+        self.config["auto_exposure"] = checked
+        config.save_config(self.config)
+        if self.tracker:
+            self.tracker.set_auto_exposure(checked)
+
+    def _on_lock_fps_toggled(self, checked):
+        self.config["lock_fps_low_light"] = checked
+        config.save_config(self.config)
+        if self.tracker:
+            self.tracker.set_auto_exposure(self.config.get("auto_exposure", True) and not checked)
+
+    def _open_cam_adv_settings(self):
+        if self.tracker:
+            self.tracker.open_camera_settings_dialog()
+
+    def _on_reset_defaults(self):
+        defaults = config.DEFAULT_CONFIG.copy()
+        for k, v in config.DEFAULT_PROFILE_DATA.items():
+            self.config[k] = v
+        config.save_config(self.config)
+        
+        self.sx_slider.setValue(defaults["sensitivity_x"])
+        self.sy_slider.setValue(defaults["sensitivity_y"])
+        self.th_slider.setValue(defaults["motion_threshold"])
+        self.sm_slider.setValue(defaults["smoothing"])
+        self.acc_slider.setValue(defaults["acceleration"])
+        self.il_slider.setValue(int(defaults["illumination_threshold"] * 10))
+        self.sp_slider.setValue(int(defaults["spike_threshold"] * 10))
+        
+        self.sx_badge.setText(str(defaults["sensitivity_x"]))
+        self.sy_badge.setText(str(defaults["sensitivity_y"]))
+        self.th_badge.setText(str(defaults["motion_threshold"]))
+        self.sm_badge.setText(str(defaults["smoothing"]))
+        self.acc_badge.setText(str(defaults["acceleration"]))
+        self.il_badge.setText(f"{defaults['illumination_threshold']:.1f}")
+        self.sp_badge.setText(f"{defaults['spike_threshold']:.1f}px")
+        
+        if hasattr(self.tracker, "yunet_filter"):
+            self.tracker.yunet_filter.config = self.config
+            self.tracker.yunet_filter.reset()
+            self.tracker.yunet_filter._build_accel_array()
+
+    def _restart_camera(self):
+        if self.tracker:
+            if self.tracker.cap and self.tracker.cap.isOpened():
+                self.tracker.cap.release()
+            self.tracker._open_camera()
+
+    def _start_hotkey_recording(self):
+        if self.is_recording_hotkey:
+            return
+        self.is_recording_hotkey = True
+        self.hotkey_btn.setText("키 누르는 중...")
+        self.hotkey_btn.setStyleSheet("background-color: #D97706; color: #FFFFFF;")
+        
+        def on_press_temp(key):
+            k_name = ""
+            if hasattr(key, 'name') and key.name:
+                k_name = key.name.lower()
+            elif hasattr(key, 'char') and key.char:
+                k_name = key.char.lower()
+            
+            if k_name:
+                self.config["tracking_toggle_key"] = k_name
+                config.save_config(self.config)
+                self.hotkey_btn.setText("단축키 변경")
+                self.hotkey_btn.setStyleSheet("")
+                self.hk_info_lbl.setText(f"단축키: {k_name.upper()}")
+                self.sc_key_lbl.setText(f"[{k_name.upper()}]")
+                if not self.start_btn.isChecked():
+                    self.start_btn.setText(f"▶   START TRACKING ({k_name.upper()})")
+                else:
+                    self.start_btn.setText(f"⏸   추적 일시정지 ({k_name.upper()})")
+                self.is_recording_hotkey = False
+                return False
+                
+        self.key_listener = keyboard.Listener(on_press=on_press_temp)
+        self.key_listener.start()

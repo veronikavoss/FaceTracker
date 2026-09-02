@@ -1,24 +1,26 @@
 import os
-# MSMF 카메라 초기화 속도 대폭 단축 및 OpenBLAS 스레드 메모리 충돌 방지
-os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
+# OpenBLAS / OpenMP 다중 스레딩 충돌 및 메모리 오류 방지
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 
-import queue
-import tkinter as tk
-from pynput import keyboard
+import sys
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage
 from pynput.mouse import Controller
-import config
+from pynput import keyboard
+import cv2
+
 from tracker import FaceTracker
 from gui import FaceTrackerGUI
+import config
 
 class FractionalMouseController:
     """
-    마우스 이동 시 정수형 픽셀 변환으로 소실되는 소수점(fractional) 좌표 변화량을
-    누적했다가 1픽셀 이상 도달 시 반영하여, 초미세 머리 움직임도 부드럽고 정확하게 제어합니다.
+    1픽셀 미만의 미세 소수점 이동량을 누적하여, 
+    정밀한 조준과 극도의 부드러운 하드웨어 마우스 이동을 지원하는 컨트롤러
     """
-    def __init__(self, mouse_backend):
-        self.mouse = mouse_backend
+    def __init__(self, mouse_controller):
+        self.mouse = mouse_controller
         self.accum_x = 0.0
         self.accum_y = 0.0
 
@@ -35,82 +37,80 @@ class FractionalMouseController:
         if move_x != 0 or move_y != 0:
             self.mouse.move(move_x, move_y)
 
-# 마우스 및 키보드 컨트롤러 초기화 (소수점 정밀 누적기 결합)
+# 마우스 컨트롤러 초기화 (소수점 정밀 누적기 결합)
 mouse = FractionalMouseController(Controller())
 
 def main():
+    app = QApplication(sys.argv)
+    
     # 1. 설정 로드
     app_config = config.load_config()
     
-    # Tkinter 루트 윈도우 생성
-    root = tk.Tk()
-    
-    # 스레드 간 비디오 프레임 전달을 위한 스레드 안전한 큐 생성 (오버플로우 방지를 위해 크기 2로 제한)
-    frame_queue = queue.Queue(maxsize=2)
-    
-    # 2. 콜백 함수 정의 (스레드 세이프 보장)
-    def on_frame_callback(frame, tracking_enabled, nose_x, nose_y, fps, w, h, engine_name="MediaPipe"):
-        # 서브 스레드에서 직접 GUI(메인 스레드)에 접근하지 않고 큐에 데이터 전달
+    # 2. GUI 인스턴스 생성을 위해 먼저 트래커 변수 선언
+    tracker = None
+    gui = None
+
+    # 3. 콜백 함수 정의 (스레드 안전한 Qt Signal 전송)
+    def on_frame_callback(frame, tracking_enabled, nose_x, nose_y, fps, w, h):
+        if gui is None:
+            return
         try:
-            if frame_queue.full():
-                try:
-                    frame_queue.get_nowait()
-                except queue.Empty:
-                    pass
-            frame_queue.put_nowait((frame, tracking_enabled, nose_x, nose_y, fps, w, h, engine_name))
+            # OpenCV BGR -> RGB QImage 변환 (무복사 최적화)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h_f, w_f, ch = rgb_frame.shape
+            bytes_per_line = ch * w_f
+            q_img = QImage(rgb_frame.data, w_f, h_f, bytes_per_line, QImage.Format_RGB888).copy()
+            
+            # Qt 시그널을 통해 메인 UI 스레드로 안전하게 프레임 전달
+            gui.frame_received_signal.emit(q_img, tracking_enabled, nose_x or 0, nose_y or 0, fps, w, h)
         except Exception:
             pass
 
     def on_move_callback(dx, dy):
-        # pynput을 사용해 딜레이 없이 하드웨어 레벨로 마우스 이동 제어
         try:
             mouse.move(dx, dy)
         except Exception as e:
             print(f"마우스 제어 에러: {e}")
-            
-    # 3. 트래커 초기화 및 시작
+
+    # 4. 트래커 초기화
     tracker = FaceTracker(
         config=app_config,
         on_frame_callback=on_frame_callback,
         on_move_callback=on_move_callback
     )
     
-    # 4. GUI 초기화
-    gui = FaceTrackerGUI(root, app_config, tracker, frame_queue)
+    # 5. PySide6 GUI 초기화 및 표시
+    gui = FaceTrackerGUI(app_config, tracker)
+    gui.show()
     
-    # GUI 측 프레임 큐 폴링 루프 개시
-    gui.start_poll_loop()
-    
-    # 5. 전역 핫키 감지 리스너 등록
+    # 6. 전역 핫키(F12) 리스너 등록
     def on_key_press(key):
         try:
-            # 설정 파일에서 실시간으로 핫키 매개변수를 읽어와 비교 (기본값: f12)
-            target_key_str = app_config.get("tracking_toggle_key", "f12").lower()
+            toggle_key_str = app_config.get("tracking_toggle_key", "f12").lower()
             
-            is_matched = False
-            # 1) 특수 키 (f1~f12, insert, home, backspace 등) 매칭
+            key_name = ""
             if hasattr(key, 'name') and key.name:
-                is_matched = (key.name.lower() == target_key_str)
-            # 2) 일반 문자 및 기호 문자 매칭
+                key_name = key.name.lower()
             elif hasattr(key, 'char') and key.char:
-                is_matched = (key.char.lower() == target_key_str)
+                key_name = key.char.lower()
                 
-            if is_matched:
+            if key_name == toggle_key_str:
                 new_state = not tracker.tracking_enabled
                 tracker.set_tracking(new_state)
+                # GUI의 버튼 및 상태 뱃지를 즉시 동기화
+                gui.tracking_toggled_signal.emit(new_state)
         except Exception:
             pass
 
-    # 백그라운드 키보드 리스너 시작
     listener = keyboard.Listener(on_press=on_key_press)
     listener.daemon = True
     listener.start()
     
-    # 트래커 카메라 스레드 시작
+    # 트래커 백그라운드 스레드 시작
     tracker.start_tracker()
     
-    # GUI 메인 루프 실행
-    root.mainloop()
+    # Qt 메인 이벤트 루프 시작
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()

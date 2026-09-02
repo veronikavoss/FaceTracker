@@ -7,24 +7,32 @@
     "camera_backend": "DSHOW",
     "camera_width": 640,
     "camera_height": 480,
-    "tracking_engine": "yunet",
-    "yunet": {
-        "sensitivity_x": 27,
-        "sensitivity_y": 27,
-        "motion_threshold": 2,
-        "smoothing": 3,
-        "acceleration": 5,
-        "illumination_threshold": 10.0,
-        "spike_threshold": 15.0
+    "current_profile": "my profile",
+    "profiles": {
+        "기본": {
+            "sensitivity_x": 27,
+            "sensitivity_y": 27,
+            "motion_threshold": 2,
+            "smoothing": 3,
+            "acceleration": 5,
+            "illumination_threshold": 10.0,
+            "spike_threshold": 15.0
+        },
+        "my profile": {
+            "sensitivity_x": 27,
+            "sensitivity_y": 27,
+            "motion_threshold": 2,
+            "smoothing": 3,
+            "acceleration": 5,
+            "illumination_threshold": 10.0,
+            "spike_threshold": 15.0
+        }
     },
-    "mediapipe": {
-        "sensitivity_x": 25,
-        "sensitivity_y": 25,
-        "outlier_threshold": 15.0,
-        "kalman_strength": 5,
-        "adaptive_smoothing": 5,
-        "deadzone": 0.08,
-        "curve_power": 1.35,
-        "acceleration": 5
-    }
+    "sensitivity_x": 27,
+    "sensitivity_y": 27,
+    "motion_threshold": 2,
+    "smoothing": 3,
+    "acceleration": 5,
+    "illumination_threshold": 10.0,
+    "spike_threshold": 15.0
 }
