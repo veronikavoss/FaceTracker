@@ -77,6 +77,7 @@ class DarkInputDialog(QDialog):
         layout.addWidget(self.prompt_lbl)
         
         self.input_edit = QLineEdit()
+        self.input_edit.setMaxLength(25)
         layout.addWidget(self.input_edit)
         
         btn_box = QHBoxLayout()
@@ -996,16 +997,25 @@ class FaceTrackerGUI(QWidget):
         return box.exec() == QMessageBox.Yes
 
     def _on_save_new_profile(self):
-        dlg = DarkInputDialog(self, "새 프로필 저장", "저장할 프로필 이름을 입력하세요:")
+        dlg = DarkInputDialog(self, "새 프로필 저장", "저장할 프로필 이름을 입력하세요 (최대 25자):")
         if dlg.exec() == QDialog.Accepted:
             pname = dlg.get_text().strip()
-            if pname:
-                profiles = self.config.setdefault("profiles", {})
-                profiles[pname] = config.get_current_profile_data(self.config)
-                self.config["current_profile"] = pname
-                config.save_config(self.config)
-                self._refresh_profile_combo()
-                self._show_dark_info("성공", f"'{pname}' 프로필이 안전하게 저장되었습니다!")
+            # 입력값 검증: 빈 값 및 제어문자 방어
+            pname = "".join(c for c in pname if c.isprintable()).strip()
+            if not pname:
+                self._show_dark_warning("경고", "유효한 프로필 이름을 입력해주세요.")
+                return
+            
+            profiles = self.config.setdefault("profiles", {})
+            if pname in profiles:
+                if not self._show_dark_confirm("확인", f"'{pname}' 프로필이 이미 존재합니다.\n덮어쓰시겠습니까?"):
+                    return
+
+            profiles[pname] = config.get_current_profile_data(self.config)
+            self.config["current_profile"] = pname
+            config.save_config(self.config)
+            self._refresh_profile_combo()
+            self._show_dark_info("성공", f"'{pname}' 프로필이 안전하게 저장되었습니다!")
 
     def _on_overwrite_profile(self):
         cur_name = self.profile_combo.currentText()
@@ -1224,3 +1234,25 @@ class FaceTrackerGUI(QWidget):
                 
         self.key_listener = keyboard.Listener(on_press=on_press_temp)
         self.key_listener.start()
+
+    def closeEvent(self, event):
+        """창 종료 시 웹캠 장치 점유를 완전히 해제하고 백그라운드 스레드를 안전하게 종료합니다."""
+        print("[FaceTracker] 애플리케이션 종료 절차 시작...")
+        # 1. 단축키 녹음 리스너 정리
+        if hasattr(self, 'key_listener') and self.key_listener and self.key_listener.is_alive():
+            try:
+                self.key_listener.stop()
+            except Exception:
+                pass
+
+        # 2. 트래커 스레드 및 웹캠 하드웨어 락 해제
+        if self.tracker:
+            try:
+                self.tracker.stop_tracker()
+                if self.tracker.cap and self.tracker.cap.isOpened():
+                    self.tracker.cap.release()
+                    print("[카메라] 웹캠 장치 점유가 안전하게 해제되었습니다.")
+            except Exception as e:
+                print(f"[카메라] 장치 해제 중 오류: {e}")
+                
+        event.accept()

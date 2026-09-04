@@ -106,6 +106,20 @@ def main():
     listener.daemon = True
     listener.start()
     
+    # 7. 애플리케이션 종료 시 하드웨어 자원 완전 해제 훅 등록
+    def clean_up():
+        try:
+            if listener and listener.is_alive():
+                listener.stop()
+            if tracker:
+                tracker.stop_tracker()
+                if tracker.cap and tracker.cap.isOpened():
+                    tracker.cap.release()
+        except Exception:
+            pass
+
+    app.aboutToQuit.connect(clean_up)
+    
     # 트래커 백그라운드 스레드 시작
     tracker.start_tracker()
     

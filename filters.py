@@ -47,8 +47,9 @@ class EMASmoothingFilter:
         self.dyant = 0.0
 
     def filter(self, raw_dx, raw_dy):
-        speed_x = self.config.get("sensitivity_x", 10)
-        speed_y = self.config.get("sensitivity_y", 10)
+        # 비정상적 값으로 인한 math.exp OverflowError 방어를 위한 안전 클램핑 (0 ~ 50)
+        speed_x = max(0, min(50, float(self.config.get("sensitivity_x", 10))))
+        speed_y = max(0, min(50, float(self.config.get("sensitivity_y", 10))))
         
         fDx = math.exp(speed_x / 6.0)
         fDy = math.exp(speed_y / 6.0)

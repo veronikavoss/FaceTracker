@@ -55,10 +55,20 @@ def load_config():
     return DEFAULT_CONFIG.copy()
 
 def save_config(config):
+    """원자적(Atomic) 파일 쓰기를 통해 비정상 종료 시에도 파일 손실 및 0바이트 손상을 방지합니다."""
+    temp_file = CONFIG_FILE + ".tmp"
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        with open(temp_file, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_file, CONFIG_FILE)
     except Exception as e:
+        if os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+            except Exception:
+                pass
         print(f"설정 저장 중 오류 발생: {e}")
 
 def get_current_profile_data(config):

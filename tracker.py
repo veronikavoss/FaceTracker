@@ -42,16 +42,65 @@ class FaceTracker(threading.Thread):
         self.yunet_detector = None
         self._init_yunet()
 
+    def _compute_file_sha256(self, filepath):
+        """파일의 SHA-256 체크섬을 계산하여 반환합니다."""
+        import hashlib
+        h = hashlib.sha256()
+        with open(filepath, "rb") as f:
+            while chunk := f.read(65536):
+                h.update(chunk)
+        return h.hexdigest().lower()
+
     def _init_yunet(self):
-        """OpenCV YuNet 얼굴 검출기 모델 초기화 (없을 시 자동 다운로드)"""
+        """OpenCV YuNet 얼굴 검출기 모델 초기화 (SHA-256 무결성 검증 및 안전한 원자적 다운로드)"""
+        import hashlib
         model_path = "face_detection_yunet_2023mar.onnx"
-        if not os.path.exists(model_path):
-            print(f"[YuNet] 모델 파일({model_path})이 없어 다운로드를 시작합니다...")
-            url = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+        expected_sha256 = "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"
+        
+        # 1. 파일이 이미 존재하면 SHA-256 무결성 검증
+        if os.path.exists(model_path):
             try:
-                urllib.request.urlretrieve(url, model_path)
-                print("[YuNet] 모델 다운로드 완료.")
+                current_sha256 = self._compute_file_sha256(model_path)
+                if current_sha256 != expected_sha256:
+                    print(f"[보안 경고] YuNet 모델 파일의 무결성 검증 실패(변조 또는 손상 의심). 안전을 위해 재다운로드합니다.")
+                    os.remove(model_path)
+                else:
+                    print("[YuNet] 모델 파일 무결성 검증 완료 (SHA-256 일치).")
             except Exception as e:
+                print(f"[보안 경고] 기존 모델 검증 중 오류: {e}. 재다운로드를 진행합니다.")
+                try:
+                    os.remove(model_path)
+                except Exception:
+                    pass
+
+        # 2. 파일이 없으면 안전하게 다운로드 (임시 파일 -> 해시 검증 -> 원자적 교체)
+        if not os.path.exists(model_path):
+            print(f"[YuNet] 모델 파일({model_path})이 없어 안전한 공식 저장소에서 다운로드를 시작합니다...")
+            url = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+            temp_path = model_path + ".tmp"
+            try:
+                # 타임아웃 15초 및 원자적 다운로드
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=15) as response, open(temp_path, 'wb') as out_file:
+                    out_file.write(response.read())
+                
+                # 다운로드된 임시 파일의 SHA-256 해시 검증
+                temp_sha256 = self._compute_file_sha256(temp_path)
+                if temp_sha256 != expected_sha256:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    print(f"[보안 차단] 다운로드된 파일의 SHA-256 해시가 일치하지 않아 차단되었습니다!")
+                    return
+                
+                # 검증 통과 시 원자적 파일 교체 (Atomic replace)
+                os.replace(temp_path, model_path)
+                print("[YuNet] 모델 무결성 검증 통과 및 안전 다운로드 완료.")
+            except Exception as e:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
                 print(f"[YuNet] 모델 다운로드 실패: {e}")
                 return
 
