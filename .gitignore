@@ -4,3 +4,4 @@ dist_face_tracker/
 *.xml
 *.dist/
 *.build/
+dist/

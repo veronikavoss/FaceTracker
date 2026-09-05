@@ -5,6 +5,7 @@ import time
 import os
 import urllib.request
 from filters import EMASmoothingFilter
+from config import get_base_dir
 
 class FaceTracker(threading.Thread):
     def __init__(self, config, on_frame_callback=None, on_move_callback=None):
@@ -35,6 +36,10 @@ class FaceTracker(threading.Thread):
         self.prev_brightness = None
         self.frame_counter = 0
         
+        # 24/7 무중단 감시용 하트비트 및 프레임 드롭 카운터
+        self.last_heartbeat = time.time()
+        self.consecutive_fails = 0
+        
         # YuNet 필터 (eViacam C++ 호환 필터)
         self.yunet_filter = EMASmoothingFilter(self.config)
         
@@ -54,7 +59,7 @@ class FaceTracker(threading.Thread):
     def _init_yunet(self):
         """OpenCV YuNet 얼굴 검출기 모델 초기화 (SHA-256 무결성 검증 및 안전한 원자적 다운로드)"""
         import hashlib
-        model_path = "face_detection_yunet_2023mar.onnx"
+        model_path = os.path.join(get_base_dir(), "face_detection_yunet_2023mar.onnx")
         expected_sha256 = "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"
         
         # 1. 파일이 이미 존재하면 SHA-256 무결성 검증
@@ -212,38 +217,50 @@ class FaceTracker(threading.Thread):
 
     def _open_camera(self):
         """설정에 따라 최적 백엔드 및 포맷으로 카메라를 초기화합니다."""
-        cam_id = self.config.get("camera_id", 0)
-        target_w = self.config.get("camera_width", 640)
-        target_h = self.config.get("camera_height", 480)
-        target_fps = self.config.get("target_fps", 30)
-        backend_str = self.config.get("camera_backend", "DSHOW").upper()
-        
-        backend = cv2.CAP_DSHOW if backend_str == "DSHOW" else cv2.CAP_ANY
-        print(f"[카메라 백엔드] {backend_str} 모드로 가동합니다.")
-        
-        self.cap = cv2.VideoCapture(cam_id, backend)
-        
-        if not self.cap.isOpened() and backend_str == "DSHOW":
-            print("[카메라 경고] DSHOW 실패. 기본 백엔드로 재시도합니다.")
-            self.cap = cv2.VideoCapture(cam_id, cv2.CAP_ANY)
+        if self.cap is not None:
+            try:
+                if self.cap.isOpened():
+                    self.cap.release()
+            except Exception:
+                pass
+            self.cap = None
+
+        try:
+            cam_id = int(self.config.get("camera_id", 0))
+            target_w = int(self.config.get("camera_width", 640))
+            target_h = int(self.config.get("camera_height", 480))
+            target_fps = int(self.config.get("target_fps", 30))
+            backend_str = str(self.config.get("camera_backend", "DSHOW")).upper()
             
-        if self.cap.isOpened():
-            fourcc_code = cv2.VideoWriter_fourcc(*'YUY2')
-            self.cap.set(cv2.CAP_PROP_FOURCC, fourcc_code)
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, target_w)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, target_h)
-            self.cap.set(cv2.CAP_PROP_FPS, target_fps)
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            backend = cv2.CAP_DSHOW if backend_str == "DSHOW" else cv2.CAP_ANY
+            print(f"[카메라 백엔드] {backend_str} 모드로 카메라 {cam_id} 초기화 가동합니다.")
             
-            w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = int(self.cap.get(cv2.CAP_PROP_FPS))
-            print(f"[카메라 설정] 해상도: {w}x{h} | FPS: {fps}")
+            self.cap = cv2.VideoCapture(cam_id, backend)
             
-            auto_exp = self.config.get("auto_exposure", True)
-            lock_fps = self.config.get("lock_fps_low_light", False)
-            self.set_auto_exposure(auto_exp and not lock_fps)
-            return True
+            if not self.cap.isOpened() and backend_str == "DSHOW":
+                print("[카메라 경고] DSHOW 실패. 기본 백엔드로 재시도합니다.")
+                self.cap = cv2.VideoCapture(cam_id, cv2.CAP_ANY)
+                
+            if self.cap.isOpened():
+                fourcc_code = cv2.VideoWriter_fourcc(*'YUY2')
+                self.cap.set(cv2.CAP_PROP_FOURCC, fourcc_code)
+                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, target_w)
+                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, target_h)
+                self.cap.set(cv2.CAP_PROP_FPS, target_fps)
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                
+                w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                fps = int(self.cap.get(cv2.CAP_PROP_FPS))
+                print(f"[카메라 설정] 해상도: {w}x{h} | FPS: {fps}")
+                
+                auto_exp = self.config.get("auto_exposure", True)
+                lock_fps = self.config.get("lock_fps_low_light", False)
+                self.set_auto_exposure(auto_exp and not lock_fps)
+                self.last_heartbeat = time.time()
+                return True
+        except Exception as e:
+            print(f"[카메라 에러] 카메라 초기화 중 예외: {e}")
             
         print("[카메라 에러] 웹캠을 열 수 없습니다.")
         return False
@@ -255,162 +272,200 @@ class FaceTracker(threading.Thread):
 
         prev_time = time.time()
         fps_smoothing = 0.9
+        self.last_heartbeat = time.time()
+        self.consecutive_fails = 0
 
         while self.running:
-            ret, frame = self.cap.read()
-            if not ret:
-                time.sleep(0.01)
-                continue
+            try:
+                # 1. 카메라 장치 열림 확인 및 복구
+                if self.cap is None or not self.cap.isOpened():
+                    print("[트래커 복구] 카메라가 닫혀 있어 재연결을 시도합니다...")
+                    if not self._open_camera():
+                        time.sleep(0.5)
+                        continue
 
-            current_time = time.time()
-            dt = current_time - prev_time
-            prev_time = current_time
-            
-            if dt > 0:
-                inst_fps = 1.0 / dt
-                self.actual_fps = fps_smoothing * self.actual_fps + (1.0 - fps_smoothing) * inst_fps
+                # 2. 프레임 캡처 및 연속 실패 감시
+                ret, frame = self.cap.read()
+                if not ret or frame is None:
+                    self.consecutive_fails += 1
+                    # 약 1초(30프레임) 연속 캡처 실패 시 USB/드라이버 자동 재연결
+                    if self.consecutive_fails >= 30:
+                        print(f"[트래커 경고] 카메라 프레임 {self.consecutive_fails}회 연속 수신 실패 -> 카메라 자동 재연결 시도...")
+                        try:
+                            if self.cap:
+                                self.cap.release()
+                        except Exception:
+                            pass
+                        time.sleep(0.3)
+                        self._open_camera()
+                        self.consecutive_fails = 0
+                    time.sleep(0.01)
+                    continue
 
-            # 좌우 반전 (거울 모드)
-            frame = cv2.flip(frame, 1)
-            h, w = frame.shape[:2]
+                # 정상 프레임 수신: 실패 카운터 리셋 및 하트비트 갱신
+                self.consecutive_fails = 0
+                self.last_heartbeat = time.time()
 
-            self.frame_counter += 1
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            
-            # 조도(광량) 계산
-            avg_brightness = np.mean(gray)
-            is_low_light = avg_brightness < 60.0
-            
-            illumination_shock = False
-            if self.prev_brightness is not None:
-                diff_b = abs(avg_brightness - self.prev_brightness)
-                il_th = float(self.config.get("illumination_threshold", 10.0))
-                if diff_b > il_th:
-                    illumination_shock = True
-            self.prev_brightness = avg_brightness
-
-            spike_th = float(self.config.get("spike_threshold", 15.0))
-            
-            # CLAHE 조명 보정
-            if is_low_light:
-                clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
-                gray_enhanced = clahe.apply(gray)
-                gray = cv2.GaussianBlur(gray_enhanced, (3, 3), 0)
-            else:
-                gray = cv2.GaussianBlur(gray, (3, 3), 0)
-            
-            dx, dy = 0.0, 0.0
-            nose_x, nose_y = None, None
-
-            # ==========================================
-            # OpenCV YuNet + Lucas-Kanade Optical Flow
-            # (순수 이동량 계산 + 5프레임 코끝 앵커 보정으로 튐 0% & 코끝 완벽 고정)
-            # ==========================================
-            if self.tracking_enabled:
-                if self.track_point is None or self.prev_gray is None:
-                    detection = self._detect_yunet_face(frame, w, h, is_low_light)
-                    if detection is not None:
-                        (x, y, fw, fh), (nx, ny) = detection
-                        self.face_rect_smooth = [float(x), float(y), float(fw), float(fh)]
-                        self.face_rect = (x, y, fw, fh)
-                        self.track_point = np.array([[[nx, ny]]], dtype=np.float32)
-                        self.prev_gray = gray.copy()
-                
-                elif self.track_point is not None and self.prev_gray is not None:
-                    current_point = self.track_point
-                    current_gray = self.prev_gray
+                # 3. 프레임 처리 및 마우스 추적 (개별 예외 완벽 격리)
+                try:
+                    current_time = time.time()
+                    dt = current_time - prev_time
+                    prev_time = current_time
                     
-                    next_point, status, err = cv2.calcOpticalFlowPyrLK(
-                        current_gray, gray, current_point, None, **self.lk_params
-                    )
+                    if dt > 0:
+                        inst_fps = 1.0 / dt
+                        self.actual_fps = fps_smoothing * self.actual_fps + (1.0 - fps_smoothing) * inst_fps
+
+                    # 좌우 반전 (거울 모드)
+                    frame = cv2.flip(frame, 1)
+                    h, w = frame.shape[:2]
+
+                    self.frame_counter += 1
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     
-                    if status is not None and status[0][0] == 1:
-                        cur_x = float(next_point[0][0][0])
-                        cur_y = float(next_point[0][0][1])
-                        prev_pt_x = float(current_point[0][0][0])
-                        prev_pt_y = float(current_point[0][0][1])
-                        
-                        # 1. 순수한 광학 흐름(Optical Flow) 이동량 계산
-                        raw_dx = cur_x - prev_pt_x
-                        raw_dy = cur_y - prev_pt_y
-                        
-                        if illumination_shock or abs(raw_dx) > spike_th or abs(raw_dy) > spike_th:
-                            raw_dx = 0.0
-                            raw_dy = 0.0
-                            self.yunet_filter.reset()
-                        
-                        # 2. 마우스 스무딩 필터 적용 및 디스패치
-                        dx, dy = self.yunet_filter.filter(raw_dx, raw_dy)
-                        if self.on_move_callback and (dx != 0.0 or dy != 0.0):
-                            self.on_move_callback(dx, dy)
-                        
-                        # 3. 마우스 계산 완료 후, 다음 프레임을 위한 코끝 앵커 보정 (마우스 움직임에 전혀 간섭 없음!)
-                        if self.frame_counter % 5 == 0:
+                    # 조도(광량) 계산
+                    avg_brightness = float(np.mean(gray))
+                    is_low_light = avg_brightness < 60.0
+                    
+                    illumination_shock = False
+                    if self.prev_brightness is not None:
+                        diff_b = abs(avg_brightness - self.prev_brightness)
+                        il_th = float(self.config.get("illumination_threshold", 10.0))
+                        if diff_b > il_th:
+                            illumination_shock = True
+                    self.prev_brightness = avg_brightness
+
+                    spike_th = float(self.config.get("spike_threshold", 15.0))
+                    
+                    # CLAHE 조명 보정
+                    if is_low_light:
+                        clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
+                        gray_enhanced = clahe.apply(gray)
+                        gray = cv2.GaussianBlur(gray_enhanced, (3, 3), 0)
+                    else:
+                        gray = cv2.GaussianBlur(gray, (3, 3), 0)
+                    
+                    dx, dy = 0.0, 0.0
+                    nose_x, nose_y = None, None
+
+                    # ==========================================
+                    # OpenCV YuNet + Lucas-Kanade Optical Flow
+                    # (순수 이동량 계산 + 5프레임 코끝 앵커 보정으로 튐 0% & 코끝 완벽 고정)
+                    # ==========================================
+                    if self.tracking_enabled:
+                        if self.track_point is None or self.prev_gray is None:
                             detection = self._detect_yunet_face(frame, w, h, is_low_light)
                             if detection is not None:
                                 (x, y, fw, fh), (nx, ny) = detection
-                                if self.face_rect_smooth is None:
-                                    self.face_rect_smooth = [float(x), float(y), float(fw), float(fh)]
-                                else:
-                                    self.face_rect_smooth[0] = 0.85 * self.face_rect_smooth[0] + 0.15 * x
-                                    self.face_rect_smooth[1] = 0.85 * self.face_rect_smooth[1] + 0.15 * y
-                                    self.face_rect_smooth[2] = 0.85 * self.face_rect_smooth[2] + 0.15 * fw
-                                    self.face_rect_smooth[3] = 0.85 * self.face_rect_smooth[3] + 0.15 * fh
-                                
-                                x_sm = int(self.face_rect_smooth[0])
-                                y_sm = int(self.face_rect_smooth[1])
-                                fw_sm = int(self.face_rect_smooth[2])
-                                fh_sm = int(self.face_rect_smooth[3])
-                                self.face_rect = (x_sm, y_sm, fw_sm, fh_sm)
-                                
-                                dist_to_nose = np.sqrt((cur_x - nx)**2 + (cur_y - ny)**2)
-                                
-                                if dist_to_nose > 6.0:
-                                    cur_x = nx
-                                    cur_y = ny
-                                elif dist_to_nose > 1.5:
-                                    cur_x = 0.70 * cur_x + 0.30 * nx
-                                    cur_y = 0.70 * cur_y + 0.30 * ny
+                                self.face_rect_smooth = [float(x), float(y), float(fw), float(fh)]
+                                self.face_rect = (x, y, fw, fh)
+                                self.track_point = np.array([[[nx, ny]]], dtype=np.float32)
+                                self.prev_gray = gray.copy()
                         
-                        nose_x = int(cur_x)
-                        nose_y = int(cur_y)
-                        self.track_point = np.array([[[cur_x, cur_y]]], dtype=np.float32)
-                        self.prev_gray = gray.copy()
+                        elif self.track_point is not None and self.prev_gray is not None:
+                            current_point = self.track_point
+                            current_gray = self.prev_gray
+                            
+                            next_point, status, err = cv2.calcOpticalFlowPyrLK(
+                                current_gray, gray, current_point, None, **self.lk_params
+                            )
+                            
+                            if status is not None and status[0][0] == 1:
+                                cur_x = float(next_point[0][0][0])
+                                cur_y = float(next_point[0][0][1])
+                                prev_pt_x = float(current_point[0][0][0])
+                                prev_pt_y = float(current_point[0][0][1])
+                                
+                                # 1. 순수한 광학 흐름(Optical Flow) 이동량 계산
+                                raw_dx = cur_x - prev_pt_x
+                                raw_dy = cur_y - prev_pt_y
+                                
+                                if illumination_shock or abs(raw_dx) > spike_th or abs(raw_dy) > spike_th:
+                                    raw_dx = 0.0
+                                    raw_dy = 0.0
+                                    self.yunet_filter.reset()
+                                
+                                # 2. 마우스 스무딩 필터 적용 및 디스패치
+                                dx, dy = self.yunet_filter.filter(raw_dx, raw_dy)
+                                if self.on_move_callback and (dx != 0.0 or dy != 0.0):
+                                    self.on_move_callback(dx, dy)
+                                
+                                # 3. 마우스 계산 완료 후, 다음 프레임을 위한 코끝 앵커 보정 (마우스 움직임에 전혀 간섭 없음!)
+                                corr_interval = max(1, int(self.config.get("correction_interval", 5)))
+                                if self.frame_counter % corr_interval == 0:
+                                    detection = self._detect_yunet_face(frame, w, h, is_low_light)
+                                    if detection is not None:
+                                        (x, y, fw, fh), (nx, ny) = detection
+                                        if self.face_rect_smooth is None:
+                                            self.face_rect_smooth = [float(x), float(y), float(fw), float(fh)]
+                                        else:
+                                            self.face_rect_smooth[0] = 0.85 * self.face_rect_smooth[0] + 0.15 * x
+                                            self.face_rect_smooth[1] = 0.85 * self.face_rect_smooth[1] + 0.15 * y
+                                            self.face_rect_smooth[2] = 0.85 * self.face_rect_smooth[2] + 0.15 * fw
+                                            self.face_rect_smooth[3] = 0.85 * self.face_rect_smooth[3] + 0.15 * fh
+                                        
+                                        x_sm = int(self.face_rect_smooth[0])
+                                        y_sm = int(self.face_rect_smooth[1])
+                                        fw_sm = int(self.face_rect_smooth[2])
+                                        fh_sm = int(self.face_rect_smooth[3])
+                                        self.face_rect = (x_sm, y_sm, fw_sm, fh_sm)
+                                        
+                                        dist_to_nose = np.sqrt((cur_x - nx)**2 + (cur_y - ny)**2)
+                                        
+                                        if dist_to_nose > 6.0:
+                                            cur_x = nx
+                                            cur_y = ny
+                                        elif dist_to_nose > 1.5:
+                                            cur_x = 0.70 * cur_x + 0.30 * nx
+                                            cur_y = 0.70 * cur_y + 0.30 * ny
+                                
+                                nose_x = int(cur_x)
+                                nose_y = int(cur_y)
+                                self.track_point = np.array([[[cur_x, cur_y]]], dtype=np.float32)
+                                self.prev_gray = gray.copy()
+                            else:
+                                self.reset_tracking_state()
                     else:
-                        self.reset_tracking_state()
-            else:
-                detection = self._detect_yunet_face(frame, w, h, is_low_light)
-                if detection is not None:
-                    (x, y, fw, fh), (nx, ny) = detection
-                    self.face_rect = (x, y, fw, fh)
-                    nose_x = int(nx)
-                    nose_y = int(ny)
-                else:
-                    self.face_rect = None
+                        detection = self._detect_yunet_face(frame, w, h, is_low_light)
+                        if detection is not None:
+                            (x, y, fw, fh), (nx, ny) = detection
+                            self.face_rect = (x, y, fw, fh)
+                            nose_x = int(nx)
+                            nose_y = int(ny)
+                        else:
+                            self.face_rect = None
 
-            # ==========================================
-            # 시각적 오버레이 그리기
-            # ==========================================
-            if self.face_rect is not None:
-                x, y, fw, fh = self.face_rect
-                rect_color = (59, 130, 246) if self.tracking_enabled else (148, 163, 184)
-                cv2.rectangle(frame, (x, y), (x + fw, y + fh), rect_color, 2)
-            
-            if nose_x is not None and nose_y is not None:
-                point_color = (0, 255, 0) if self.tracking_enabled else (0, 0, 255)
-                cv2.circle(frame, (nose_x, nose_y), 6, point_color, -1)
-                cv2.circle(frame, (nose_x, nose_y), 2, (255, 255, 255), -1)
+                    # ==========================================
+                    # 시각적 오버레이 그리기
+                    # ==========================================
+                    if self.face_rect is not None:
+                        x, y, fw, fh = self.face_rect
+                        rect_color = (59, 130, 246) if self.tracking_enabled else (148, 163, 184)
+                        cv2.rectangle(frame, (x, y), (x + fw, y + fh), rect_color, 2)
+                    
+                    if nose_x is not None and nose_y is not None:
+                        point_color = (0, 255, 0) if self.tracking_enabled else (0, 0, 255)
+                        cv2.circle(frame, (nose_x, nose_y), 6, point_color, -1)
+                        cv2.circle(frame, (nose_x, nose_y), 2, (255, 255, 255), -1)
 
-            if self.on_frame_callback:
-                self.on_frame_callback(
-                    frame, 
-                    self.tracking_enabled, 
-                    nose_x, 
-                    nose_y, 
-                    int(self.actual_fps + 0.5), 
-                    w, 
-                    h
-                )
+                    if self.on_frame_callback:
+                        self.on_frame_callback(
+                            frame, 
+                            self.tracking_enabled, 
+                            nose_x, 
+                            nose_y, 
+                            int(self.actual_fps + 0.5), 
+                            w, 
+                            h
+                        )
+                except Exception as frame_e:
+                    print(f"[트래커 프레임 처리 예외]: {frame_e}")
+                    self.reset_tracking_state()
+
+            except Exception as outer_e:
+                print(f"[트래커 루프 심각 오류 격리]: {outer_e}")
+                self.reset_tracking_state()
+                time.sleep(0.1)
 
         if self.cap and self.cap.isOpened():
             self.cap.release()

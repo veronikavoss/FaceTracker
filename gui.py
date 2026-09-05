@@ -22,35 +22,37 @@ class DarkInputDialog(QDialog):
         self.setFixedSize(360, 160)
         self.setStyleSheet("""
             QDialog {
-                background-color: #151D2A;
-                border: 1px solid #233044;
+                background-color: #182234;
+                border: 1px solid #33435C;
                 border-radius: 10px;
+                font-family: 'Pretendard', 'Malgun Gothic', '맑은 고딕', 'Segoe UI', sans-serif;
             }
             QLabel {
-                color: #F8FAFC;
-                font-size: 13px;
-                font-weight: 600;
+                color: #FFFFFF;
+                font-size: 14px;
+                font-weight: 700;
             }
             QLineEdit {
-                background-color: #0B111A;
+                background-color: #0D1420;
                 color: #FFFFFF;
-                border: 1px solid #38BDF8;
+                border: 1.5px solid #38BDF8;
                 border-radius: 6px;
                 padding: 8px 12px;
-                font-size: 13px;
+                font-size: 14px;
+                font-weight: 500;
             }
             QLineEdit:focus {
-                border: 1px solid #7DD3FC;
-                background-color: #0F172A;
+                border: 1.5px solid #7DD3FC;
+                background-color: #111A29;
             }
             QPushButton#ConfirmBtn {
                 background-color: #0284C7;
                 color: #FFFFFF;
-                font-size: 12px;
+                font-size: 13px;
                 font-weight: bold;
                 border: none;
                 border-radius: 6px;
-                padding: 8px 16px;
+                padding: 9px 18px;
             }
             QPushButton#ConfirmBtn:hover {
                 background-color: #0369A1;
@@ -58,11 +60,11 @@ class DarkInputDialog(QDialog):
             QPushButton#CancelBtn {
                 background-color: #334155;
                 color: #F8FAFC;
-                font-size: 12px;
+                font-size: 13px;
                 font-weight: 600;
                 border: none;
                 border-radius: 6px;
-                padding: 8px 16px;
+                padding: 9px 18px;
             }
             QPushButton#CancelBtn:hover {
                 background-color: #475569;
@@ -107,64 +109,71 @@ class DarkInputDialog(QDialog):
 # ========================================================
 STYLE_SHEET = """
 QWidget {
-    font-family: 'Segoe UI', 'Inter', sans-serif;
+    font-family: 'Pretendard', 'Malgun Gothic', '맑은 고딕', 'Segoe UI', -apple-system, sans-serif;
     color: #F8FAFC;
+    font-size: 13px;
 }
 
-/* 메인 윈도우 배경 및 테두리 */
+/* 메인 윈도우 배경 및 테두리 (깊고 정돈된 딥 네이비 블랙) */
 #MainContainer {
-    background-color: #0B0F17;
-    border: 1px solid #233044;
+    background-color: #0A0F1A;
+    border: 1.5px solid #2B3B56;
     border-radius: 12px;
 }
 
-/* 좌측 사이드바 */
+/* 좌측 사이드바 (메인 배경과 확실한 경계 구분) */
 #Sidebar {
-    background-color: #0D131F;
-    border-right: 1px solid #1E293B;
+    background-color: #0E1524;
+    border-right: 1.5px solid #24324A;
     border-top-left-radius: 12px;
     border-bottom-left-radius: 12px;
 }
 
-/* 사이드바 탭 버튼 */
+/* 사이드바 탭 버튼 (선명하고 큼직한 가독성) */
 QPushButton.NavButton {
     background-color: transparent;
-    color: #94A3B8;
+    color: #CBD5E1;
     text-align: left;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
-    padding: 12px 16px;
+    padding: 13px 18px;
     border: none;
     border-radius: 8px;
 }
 
 QPushButton.NavButton:hover {
-    background-color: #162032;
-    color: #F8FAFC;
+    background-color: #1A263A;
+    color: #FFFFFF;
 }
 
 QPushButton.NavButton:checked {
     background-color: #1E293B;
     color: #38BDF8;
-    border-left: 3px solid #10B981;
+    border-left: 4px solid #10B981;
+    font-weight: bold;
 }
 
-/* 글래스모피즘 대시보드 카드 */
+/* 글래스모피즘 대시보드 카드 (메인 배경에서 확연히 떠오르는 고대비 밝은 톤) */
 QFrame.DashboardCard {
-    background-color: #151D2A;
-    border: 1px solid #233044;
+    background-color: #182234;
+    border: 1.5px solid #2D3E5B;
     border-radius: 10px;
+}
+
+QFrame.DashboardCard:hover {
+    border-color: #3B4F73;
 }
 
 /* 대형 시작 버튼 (기본: 에메랄드 네온 글로우) */
 QPushButton#StartButton {
     background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #10B981, stop:1 #059669);
     color: #FFFFFF;
-    font-size: 15px;
-    font-weight: bold;
+    font-size: 16px;
+    font-weight: 800;
     border-radius: 25px;
-    border: 1px solid #34D399;
-    padding: 12px 28px;
+    border: 1.5px solid #34D399;
+    padding: 14px 28px;
+    letter-spacing: 0.5px;
 }
 
 QPushButton#StartButton:hover {
@@ -173,18 +182,18 @@ QPushButton#StartButton:hover {
 
 QPushButton#StartButton:checked {
     background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #EF4444, stop:1 #DC2626);
-    border: 1px solid #F87171;
+    border: 1.5px solid #F87171;
 }
 
 QPushButton#StartButton:checked:hover {
     background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #F87171, stop:1 #EF4444);
 }
 
-/* 슬라이더 스타일링 */
+/* 슬라이더 스타일링 (카드 내부 깊은 음각 효과 & 선명한 핸들) */
 QSlider::groove:horizontal {
-    border: none;
-    height: 6px;
-    background: #0B111A;
+    border: 1px solid #2A3B54;
+    height: 7px;
+    background: #0D1420;
     border-radius: 3px;
 }
 
@@ -196,56 +205,68 @@ QSlider::sub-page:horizontal {
 QSlider::handle:horizontal {
     background: #38BDF8;
     border: 2px solid #FFFFFF;
-    width: 16px;
-    height: 16px;
-    margin: -5px 0;
-    border-radius: 8px;
+    width: 18px;
+    height: 18px;
+    margin: -6px 0;
+    border-radius: 9px;
 }
 
 QSlider::handle:horizontal:hover {
     background: #7DD3FC;
+    width: 20px;
+    height: 20px;
+    margin: -7px 0;
+    border-radius: 10px;
 }
 
-/* 콤보박스 */
+/* 콤보박스 (카드 대비 뚜렷한 음각 디자인과 고대비 텍스트) */
 QComboBox {
-    background-color: #0B111A;
-    border: 1px solid #233044;
+    background-color: #0D1420;
+    border: 1.5px solid #2D3E5B;
     border-radius: 6px;
-    padding: 5px 10px;
-    color: #F8FAFC;
-    font-size: 12px;
+    padding: 6px 12px;
+    color: #FFFFFF;
+    font-size: 13px;
+    font-weight: 500;
 }
 
 QComboBox:hover {
-    border: 1px solid #38BDF8;
+    border-color: #38BDF8;
 }
 
 QComboBox::drop-down {
     border: none;
-    width: 20px;
+    width: 24px;
 }
 
 QComboBox QAbstractItemView {
-    background-color: #151D2A;
-    border: 1px solid #233044;
-    color: #F8FAFC;
-    selection-background-color: #1E293B;
-    selection-color: #38BDF8;
+    background-color: #182234;
+    border: 1.5px solid #38BDF8;
+    color: #FFFFFF;
+    font-size: 13px;
+    selection-background-color: #0284C7;
+    selection-color: #FFFFFF;
+    padding: 4px;
 }
 
-/* 체크박스 */
+/* 체크박스 (또렷한 글씨와 선명한 체크 박스) */
 QCheckBox {
-    color: #94A3B8;
-    font-size: 11px;
-    spacing: 8px;
+    color: #F1F5F9;
+    font-size: 13px;
+    font-weight: 500;
+    spacing: 9px;
 }
 
 QCheckBox::indicator {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     border-radius: 4px;
-    border: 1px solid #233044;
-    background-color: #0B111A;
+    border: 1.5px solid #3D5174;
+    background-color: #0D1420;
+}
+
+QCheckBox::indicator:hover {
+    border-color: #38BDF8;
 }
 
 QCheckBox::indicator:checked {
@@ -255,49 +276,49 @@ QCheckBox::indicator:checked {
 
 /* 보조 버튼 */
 QPushButton.SecondaryButton {
-    background-color: #1E293B;
-    color: #94A3B8;
-    font-size: 11px;
+    background-color: #243247;
+    color: #F8FAFC;
+    font-size: 12px;
     font-weight: 600;
-    border: 1px solid #233044;
+    border: 1px solid #3D5174;
     border-radius: 6px;
-    padding: 6px 12px;
+    padding: 7px 14px;
 }
 
 QPushButton.SecondaryButton:hover {
-    background-color: #2D3B4F;
-    color: #F8FAFC;
+    background-color: #33435C;
+    color: #FFFFFF;
     border-color: #38BDF8;
 }
 
 /* 강조 보조 버튼 */
 QPushButton.PrimaryActionBtn {
-    background-color: #0369A1;
+    background-color: #0284C7;
     color: #FFFFFF;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: bold;
     border: 1px solid #38BDF8;
     border-radius: 6px;
-    padding: 6px 12px;
+    padding: 7px 14px;
 }
 
 QPushButton.PrimaryActionBtn:hover {
-    background-color: #0284C7;
+    background-color: #0369A1;
 }
 
 /* 위험/삭제 버튼 */
 QPushButton.DangerBtn {
-    background-color: #381A1A;
-    color: #F87171;
-    font-size: 11px;
+    background-color: #4A1A1A;
+    color: #FCA5A5;
+    font-size: 12px;
     font-weight: bold;
-    border: 1px solid #7F1D1D;
+    border: 1px solid #991B1B;
     border-radius: 6px;
-    padding: 6px 12px;
+    padding: 7px 14px;
 }
 
 QPushButton.DangerBtn:hover {
-    background-color: #451A1A;
+    background-color: #5C1D1D;
     color: #EF4444;
     border-color: #DC2626;
 }
@@ -322,20 +343,20 @@ class CustomTitleBar(QWidget):
         
         # 타이틀바 텍스트
         self.title_lbl = QLabel("Face Tracker")
-        self.title_lbl.setStyleSheet("color: #94A3B8; font-size: 12px; font-weight: 600;")
+        self.title_lbl.setStyleSheet("color: #E2E8F0; font-size: 13px; font-weight: 700; letter-spacing: 0.3px;")
         layout.addWidget(self.title_lbl)
         
         version_lbl = QLabel("v2.2")
-        version_lbl.setStyleSheet("color: #475569; font-size: 10px; font-weight: bold; margin-left: 6px;")
+        version_lbl.setStyleSheet("color: #64748B; font-size: 11px; font-weight: bold; margin-left: 6px;")
         layout.addWidget(version_lbl)
         
         layout.addStretch()
         
         # 최소화 버튼
         self.min_btn = QPushButton("─")
-        self.min_btn.setFixedSize(26, 26)
+        self.min_btn.setFixedSize(28, 28)
         self.min_btn.setStyleSheet("""
-            QPushButton { background: transparent; color: #94A3B8; border: none; font-size: 10px; border-radius: 4px; }
+            QPushButton { background: transparent; color: #CBD5E1; border: none; font-size: 11px; border-radius: 4px; }
             QPushButton:hover { background: #1E293B; color: #FFFFFF; }
         """)
         self.min_btn.clicked.connect(self.parent.showMinimized)
@@ -343,9 +364,9 @@ class CustomTitleBar(QWidget):
         
         # 닫기 버튼
         self.close_btn = QPushButton("✕")
-        self.close_btn.setFixedSize(26, 26)
+        self.close_btn.setFixedSize(28, 28)
         self.close_btn.setStyleSheet("""
-            QPushButton { background: transparent; color: #94A3B8; border: none; font-size: 12px; border-radius: 4px; }
+            QPushButton { background: transparent; color: #CBD5E1; border: none; font-size: 13px; border-radius: 4px; }
             QPushButton:hover { background: #DC2626; color: #FFFFFF; }
         """)
         self.close_btn.clicked.connect(self.parent.close)
@@ -428,6 +449,7 @@ class FaceTrackerGUI(QWidget):
         
         self.is_recording_hotkey = False
         self.key_listener = None
+        self._is_frame_busy = False
 
     def _detect_camera_names(self):
         """QMediaDevices를 사용하여 시스템에 연결된 실제 카메라 원래 이름을 검출"""
@@ -482,13 +504,13 @@ class FaceTrackerGUI(QWidget):
         
         # 하단 단축키 힌트
         shortcut_box = QFrame()
-        shortcut_box.setStyleSheet("background-color: #111A29; border-radius: 6px; padding: 6px;")
+        shortcut_box.setStyleSheet("background-color: #131B2A; border: 1px solid #28374E; border-radius: 8px; padding: 8px;")
         sc_layout = QVBoxLayout(shortcut_box)
-        sc_layout.setContentsMargins(4, 4, 4, 4)
+        sc_layout.setContentsMargins(6, 6, 6, 6)
         sc_lbl = QLabel("Toggle Hotkey")
-        sc_lbl.setStyleSheet("color: #64748B; font-size: 9px; font-weight: bold;")
+        sc_lbl.setStyleSheet("color: #94A3B8; font-size: 11px; font-weight: bold; letter-spacing: 0.5px;")
         self.sc_key_lbl = QLabel(f"[{self.config.get('tracking_toggle_key', 'F12').upper()}]")
-        self.sc_key_lbl.setStyleSheet("color: #38BDF8; font-size: 11px; font-weight: bold;")
+        self.sc_key_lbl.setStyleSheet("color: #38BDF8; font-size: 13px; font-weight: 800;")
         sc_layout.addWidget(sc_lbl)
         sc_layout.addWidget(self.sc_key_lbl)
         layout.addWidget(shortcut_box)
@@ -520,12 +542,13 @@ class FaceTrackerGUI(QWidget):
         # 카드 상단 헤더
         vc_header = QHBoxLayout()
         vc_title = QLabel("LIVE VIDEO FEED")
-        vc_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #38BDF8; letter-spacing: 0.5px;")
+        vc_title.setStyleSheet("font-size: 14px; font-weight: 800; color: #38BDF8; letter-spacing: 0.8px;")
         
         self.badge_detected = QLabel("추적 대기 중...")
         self.badge_detected.setStyleSheet("""
-            background-color: #2A1414; color: #EF4444;
-            font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 4px;
+            background-color: #381A1A; color: #FCA5A5;
+            font-size: 11px; font-weight: bold; padding: 3px 10px; border-radius: 5px;
+            border: 1px solid #7F1D1D;
         """)
         vc_header.addWidget(vc_title)
         vc_header.addStretch()
@@ -535,17 +558,17 @@ class FaceTrackerGUI(QWidget):
         # 비디오 캔버스 라벨 (가로 540px, 세로 360px)
         self.video_canvas = QLabel()
         self.video_canvas.setFixedSize(540, 360)
-        self.video_canvas.setStyleSheet("background-color: #000000; border-radius: 8px;")
+        self.video_canvas.setStyleSheet("background-color: #000000; border: 1.5px solid #2B3A54; border-radius: 8px;")
         self.video_canvas.setAlignment(Qt.AlignCenter)
         vc_layout.addWidget(self.video_canvas, 0, Qt.AlignCenter)
         
         # 하단 카메라 메타정보 바
         vc_footer = QHBoxLayout()
         self.cam_name_lbl = QLabel(f"Device: {self._get_current_cam_name()}")
-        self.cam_name_lbl.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        self.cam_name_lbl.setStyleSheet("color: #E2E8F0; font-size: 12px; font-weight: 600;")
         
         self.cam_fps_lbl = QLabel("FPS: 0 | 640x480")
-        self.cam_fps_lbl.setStyleSheet("color: #38BDF8; font-size: 11px; font-weight: bold;")
+        self.cam_fps_lbl.setStyleSheet("color: #38BDF8; font-size: 12px; font-weight: 800;")
         vc_footer.addWidget(self.cam_name_lbl)
         vc_footer.addStretch()
         vc_footer.addWidget(self.cam_fps_lbl)
@@ -557,13 +580,13 @@ class FaceTrackerGUI(QWidget):
         cam_ctrl_card = QFrame()
         cam_ctrl_card.setProperty("class", "DashboardCard")
         cc_layout = QVBoxLayout(cam_ctrl_card)
-        cc_layout.setContentsMargins(14, 10, 14, 10)
-        cc_layout.setSpacing(8)
+        cc_layout.setContentsMargins(14, 12, 14, 12)
+        cc_layout.setSpacing(10)
         
         # 1행: 카메라 선택 (실제 하드웨어 명칭 노출), 해상도, FPS 드롭다운
         row1 = QHBoxLayout()
         cam_lbl = QLabel("카메라 선택:")
-        cam_lbl.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        cam_lbl.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 600;")
         
         self.cam_combo = QComboBox()
         cur_cam_id = self.config.get("camera_id", 0)
@@ -576,7 +599,7 @@ class FaceTrackerGUI(QWidget):
         self.cam_combo.currentIndexChanged.connect(self._on_camera_changed)
         
         res_lbl = QLabel("해상도:")
-        res_lbl.setStyleSheet("color: #94A3B8; font-size: 11px; margin-left: 10px;")
+        res_lbl.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 600; margin-left: 12px;")
         self.res_combo = QComboBox()
         self.res_combo.addItems(["640x480", "1280x720", "320x240"])
         cur_res = f"{self.config.get('camera_width', 640)}x{self.config.get('camera_height', 480)}"
@@ -584,7 +607,7 @@ class FaceTrackerGUI(QWidget):
         self.res_combo.currentIndexChanged.connect(self._on_resolution_changed)
         
         fps_lbl = QLabel("FPS:")
-        fps_lbl.setStyleSheet("color: #94A3B8; font-size: 11px; margin-left: 10px;")
+        fps_lbl.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 600; margin-left: 12px;")
         self.fps_combo = QComboBox()
         self.fps_combo.addItems(["30", "60"])
         self.fps_combo.setCurrentText(str(self.config.get("target_fps", 30)))
@@ -609,7 +632,7 @@ class FaceTrackerGUI(QWidget):
         self.lock_fps_chk.toggled.connect(self._on_lock_fps_toggled)
         
         row2.addWidget(self.auto_exp_chk)
-        row2.addSpacing(20)
+        row2.addSpacing(24)
         row2.addWidget(self.lock_fps_chk)
         row2.addStretch()
         cc_layout.addLayout(row2)
@@ -634,7 +657,7 @@ class FaceTrackerGUI(QWidget):
         self.start_btn.setObjectName("StartButton")
         self.start_btn.setCheckable(True)
         self.start_btn.setCursor(Qt.PointingHandCursor)
-        self.start_btn.setFixedSize(480, 50)
+        self.start_btn.setFixedSize(480, 52)
         
         # 에메랄드 글로우 드롭 섀도우 효과
         self.btn_glow = QGraphicsDropShadowEffect(self)
@@ -648,7 +671,7 @@ class FaceTrackerGUI(QWidget):
         
         # 하단 상태 텍스트
         self.status_text = QLabel("상태: 비활성 (F12를 누르거나 위 버튼을 클릭하여 추적 시작)")
-        self.status_text.setStyleSheet("color: #64748B; font-size: 11px; font-weight: 500; margin-top: 4px;")
+        self.status_text.setStyleSheet("color: #94A3B8; font-size: 12px; font-weight: 600; margin-top: 6px;")
         self.status_text.setAlignment(Qt.AlignCenter)
         bc_layout.addWidget(self.status_text)
         
@@ -667,7 +690,7 @@ class FaceTrackerGUI(QWidget):
         # 상단 타이틀 & 초기화 버튼
         title_box = QHBoxLayout()
         st_lbl = QLabel("⚙️ Tracking & Motion Settings")
-        st_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #F8FAFC;")
+        st_lbl.setStyleSheet("font-size: 17px; font-weight: 800; color: #FFFFFF;")
         
         reset_btn = QPushButton("↺  기본값 복원")
         reset_btn.setProperty("class", "SecondaryButton")
@@ -694,21 +717,26 @@ class FaceTrackerGUI(QWidget):
         motion_card.setProperty("class", "DashboardCard")
         motion_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         mc_layout = QVBoxLayout(motion_card)
-        mc_layout.setContentsMargins(18, 14, 18, 14)
-        mc_layout.setSpacing(12)
+        mc_layout.setContentsMargins(18, 16, 18, 16)
+        mc_layout.setSpacing(14)
         
         mc_title = QLabel("모션 및 감도 컨트롤")
-        mc_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #38BDF8;")
+        mc_title.setStyleSheet("font-size: 14px; font-weight: 800; color: #38BDF8; letter-spacing: 0.5px;")
         mc_layout.addWidget(mc_title)
         
         grid = QGridLayout()
         grid.setHorizontalSpacing(18)
-        grid.setVerticalSpacing(12)
+        grid.setVerticalSpacing(14)
         
+        def make_field_lbl(text):
+            lbl = QLabel(text)
+            lbl.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 600;")
+            return lbl
+
         # 민감도 X
-        grid.addWidget(QLabel("민감도 X:"), 0, 0)
+        grid.addWidget(make_field_lbl("민감도 X:"), 0, 0)
         self.sx_badge = QLabel(f"{self.config.get('sensitivity_x', 27)}")
-        self.sx_badge.setStyleSheet("color: #38BDF8; font-weight: bold;")
+        self.sx_badge.setStyleSheet("color: #38BDF8; font-size: 14px; font-weight: 800; min-width: 32px;")
         grid.addWidget(self.sx_badge, 0, 1)
         self.sx_slider = QSlider(Qt.Horizontal)
         self.sx_slider.setRange(0, 50)
@@ -717,9 +745,9 @@ class FaceTrackerGUI(QWidget):
         grid.addWidget(self.sx_slider, 0, 2)
         
         # 민감도 Y
-        grid.addWidget(QLabel("민감도 Y:"), 0, 3)
+        grid.addWidget(make_field_lbl("민감도 Y:"), 0, 3)
         self.sy_badge = QLabel(f"{self.config.get('sensitivity_y', 27)}")
-        self.sy_badge.setStyleSheet("color: #38BDF8; font-weight: bold;")
+        self.sy_badge.setStyleSheet("color: #38BDF8; font-size: 14px; font-weight: 800; min-width: 32px;")
         grid.addWidget(self.sy_badge, 0, 4)
         self.sy_slider = QSlider(Qt.Horizontal)
         self.sy_slider.setRange(0, 50)
@@ -728,9 +756,9 @@ class FaceTrackerGUI(QWidget):
         grid.addWidget(self.sy_slider, 0, 5)
         
         # 임계값 (Deadzone)
-        grid.addWidget(QLabel("임계값:"), 1, 0)
+        grid.addWidget(make_field_lbl("임계값:"), 1, 0)
         self.th_badge = QLabel(f"{self.config.get('motion_threshold', 2)}")
-        self.th_badge.setStyleSheet("color: #94A3B8; font-weight: bold;")
+        self.th_badge.setStyleSheet("color: #F1F5F9; font-size: 14px; font-weight: 800; min-width: 32px;")
         grid.addWidget(self.th_badge, 1, 1)
         self.th_slider = QSlider(Qt.Horizontal)
         self.th_slider.setRange(0, 4)
@@ -739,9 +767,9 @@ class FaceTrackerGUI(QWidget):
         grid.addWidget(self.th_slider, 1, 2)
         
         # 스무딩
-        grid.addWidget(QLabel("스무딩:"), 1, 3)
+        grid.addWidget(make_field_lbl("스무딩:"), 1, 3)
         self.sm_badge = QLabel(f"{self.config.get('smoothing', 3)}")
-        self.sm_badge.setStyleSheet("color: #10B981; font-weight: bold;")
+        self.sm_badge.setStyleSheet("color: #34D399; font-size: 14px; font-weight: 800; min-width: 32px;")
         grid.addWidget(self.sm_badge, 1, 4)
         self.sm_slider = QSlider(Qt.Horizontal)
         self.sm_slider.setRange(0, 6)
@@ -749,21 +777,32 @@ class FaceTrackerGUI(QWidget):
         self.sm_slider.valueChanged.connect(self._on_sm_changed)
         grid.addWidget(self.sm_slider, 1, 5)
         
-        # 가속도 (1행 전체 차지)
-        grid.addWidget(QLabel("가속도:"), 2, 0)
+        # 가속도 (좌측: 0, 1, 2열)
+        grid.addWidget(make_field_lbl("가속도:"), 2, 0)
         self.acc_badge = QLabel(f"{self.config.get('acceleration', 5)}")
-        self.acc_badge.setStyleSheet("color: #F59E0B; font-weight: bold;")
+        self.acc_badge.setStyleSheet("color: #FBBF24; font-size: 14px; font-weight: 800; min-width: 32px;")
         grid.addWidget(self.acc_badge, 2, 1)
         self.acc_slider = QSlider(Qt.Horizontal)
         self.acc_slider.setRange(0, 10)
         self.acc_slider.setValue(int(self.config.get("acceleration", 5)))
         self.acc_slider.valueChanged.connect(self._on_accel_changed)
-        grid.addWidget(self.acc_slider, 2, 2, 1, 4)
+        grid.addWidget(self.acc_slider, 2, 2)
+        
+        # 보정 주기 (우측: 3, 4, 5열)
+        grid.addWidget(make_field_lbl("보정 주기:"), 2, 3)
+        self.ci_badge = QLabel(f"{self.config.get('correction_interval', 5)}")
+        self.ci_badge.setStyleSheet("color: #A78BFA; font-size: 14px; font-weight: 800; min-width: 32px;")
+        grid.addWidget(self.ci_badge, 2, 4)
+        self.ci_slider = QSlider(Qt.Horizontal)
+        self.ci_slider.setRange(1, 20)
+        self.ci_slider.setValue(int(self.config.get("correction_interval", 5)))
+        self.ci_slider.valueChanged.connect(self._on_ci_changed)
+        grid.addWidget(self.ci_slider, 2, 5)
         
         # 광량 감지 & 튐 억제
-        grid.addWidget(QLabel("광량 감지:"), 3, 0)
+        grid.addWidget(make_field_lbl("광량 감지:"), 3, 0)
         self.il_badge = QLabel(f"{float(self.config.get('illumination_threshold', 10.0)):.1f}")
-        self.il_badge.setStyleSheet("color: #94A3B8; font-weight: bold;")
+        self.il_badge.setStyleSheet("color: #F1F5F9; font-size: 14px; font-weight: 800; min-width: 42px;")
         grid.addWidget(self.il_badge, 3, 1)
         self.il_slider = QSlider(Qt.Horizontal)
         self.il_slider.setRange(10, 300)
@@ -771,9 +810,9 @@ class FaceTrackerGUI(QWidget):
         self.il_slider.valueChanged.connect(self._on_il_changed)
         grid.addWidget(self.il_slider, 3, 2)
         
-        grid.addWidget(QLabel("튐 억제:"), 3, 3)
+        grid.addWidget(make_field_lbl("튐 억제:"), 3, 3)
         self.sp_badge = QLabel(f"{float(self.config.get('spike_threshold', 15.0)):.1f}px")
-        self.sp_badge.setStyleSheet("color: #94A3B8; font-weight: bold;")
+        self.sp_badge.setStyleSheet("color: #F1F5F9; font-size: 14px; font-weight: 800; min-width: 48px;")
         grid.addWidget(self.sp_badge, 3, 4)
         self.sp_slider = QSlider(Qt.Horizontal)
         self.sp_slider.setRange(50, 500)
@@ -789,16 +828,16 @@ class FaceTrackerGUI(QWidget):
         hk_card.setProperty("class", "DashboardCard")
         hk_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         hc_layout = QVBoxLayout(hk_card)
-        hc_layout.setContentsMargins(18, 12, 18, 12)
-        hc_layout.setSpacing(8)
+        hc_layout.setContentsMargins(18, 14, 18, 14)
+        hc_layout.setSpacing(10)
         
         hc_title = QLabel("단축키 설정")
-        hc_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #38BDF8;")
+        hc_title.setStyleSheet("font-size: 14px; font-weight: 800; color: #38BDF8; letter-spacing: 0.5px;")
         hc_layout.addWidget(hc_title)
         
         hk_row = QHBoxLayout()
         self.hk_info_lbl = QLabel(f"단축키: {self.config.get('tracking_toggle_key', 'F12').upper()}")
-        self.hk_info_lbl.setStyleSheet("color: #F8FAFC; font-weight: 600; font-size: 12px;")
+        self.hk_info_lbl.setStyleSheet("color: #FFFFFF; font-weight: 700; font-size: 13px;")
         
         self.hotkey_btn = QPushButton("단축키 변경")
         self.hotkey_btn.setProperty("class", "SecondaryButton")
@@ -816,17 +855,17 @@ class FaceTrackerGUI(QWidget):
         prof_card.setProperty("class", "DashboardCard")
         prof_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         pc_layout = QVBoxLayout(prof_card)
-        pc_layout.setContentsMargins(18, 14, 18, 14)
-        pc_layout.setSpacing(10)
+        pc_layout.setContentsMargins(18, 16, 18, 16)
+        pc_layout.setSpacing(12)
         
         pc_title = QLabel("💾 설정 프로필 관리 (Profiles)")
-        pc_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #38BDF8;")
+        pc_title.setStyleSheet("font-size: 14px; font-weight: 800; color: #38BDF8; letter-spacing: 0.5px;")
         pc_layout.addWidget(pc_title)
         
         # 1행: 프로필 선택 콤보박스
         p_row1 = QHBoxLayout()
         p_lbl = QLabel("현재 프로필:")
-        p_lbl.setStyleSheet("color: #94A3B8; font-size: 12px;")
+        p_lbl.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 600;")
         
         self.profile_combo = QComboBox()
         self._refresh_profile_combo()
@@ -873,17 +912,17 @@ class FaceTrackerGUI(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(12)
+        layout.setSpacing(14)
         
         title = QLabel("Face Tracker 사용 안내")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #F8FAFC;")
+        title.setStyleSheet("font-size: 17px; font-weight: 800; color: #FFFFFF;")
         layout.addWidget(title)
         
         card = QFrame()
         card.setProperty("class", "DashboardCard")
         c_layout = QVBoxLayout(card)
-        c_layout.setContentsMargins(18, 16, 18, 16)
-        c_layout.setSpacing(10)
+        c_layout.setContentsMargins(20, 18, 20, 18)
+        c_layout.setSpacing(12)
         
         tips = [
             "🎯 <b>마우스 추적 시작/일시정지</b>: Home 탭의 <code>START TRACKING</code> 버튼을 클릭하거나 <code>F12</code> 단축키를 누르세요.",
@@ -893,7 +932,7 @@ class FaceTrackerGUI(QWidget):
         
         for t in tips:
             lbl = QLabel(t)
-            lbl.setStyleSheet("color: #94A3B8; font-size: 12px; line-height: 1.4;")
+            lbl.setStyleSheet("color: #F1F5F9; font-size: 14px; line-height: 1.6; padding: 4px 0;")
             lbl.setWordWrap(True)
             c_layout.addWidget(lbl)
             
@@ -956,9 +995,9 @@ class FaceTrackerGUI(QWidget):
         box.setWindowTitle(title)
         box.setText(text)
         box.setStyleSheet("""
-            QMessageBox { background-color: #151D2A; border: 1px solid #233044; border-radius: 10px; }
-            QLabel { color: #F8FAFC; font-size: 13px; font-weight: 500; }
-            QPushButton { background-color: #0284C7; color: #FFFFFF; font-size: 12px; font-weight: bold; border-radius: 6px; padding: 6px 18px; min-width: 60px; }
+            QMessageBox { background-color: #182234; border: 1.5px solid #2D3E5B; border-radius: 10px; font-family: 'Pretendard', 'Malgun Gothic', '맑은 고딕', 'Segoe UI', sans-serif; }
+            QLabel { color: #FFFFFF; font-size: 14px; font-weight: 600; }
+            QPushButton { background-color: #0284C7; color: #FFFFFF; font-size: 13px; font-weight: bold; border-radius: 6px; padding: 7px 20px; min-width: 68px; }
             QPushButton:hover { background-color: #0369A1; }
         """)
         box.exec()
@@ -969,9 +1008,9 @@ class FaceTrackerGUI(QWidget):
         box.setText(text)
         box.setIcon(QMessageBox.Warning)
         box.setStyleSheet("""
-            QMessageBox { background-color: #151D2A; border: 1px solid #233044; border-radius: 10px; }
-            QLabel { color: #F8FAFC; font-size: 13px; font-weight: 500; }
-            QPushButton { background-color: #D97706; color: #FFFFFF; font-size: 12px; font-weight: bold; border-radius: 6px; padding: 6px 18px; min-width: 60px; }
+            QMessageBox { background-color: #182234; border: 1.5px solid #2D3E5B; border-radius: 10px; font-family: 'Pretendard', 'Malgun Gothic', '맑은 고딕', 'Segoe UI', sans-serif; }
+            QLabel { color: #FFFFFF; font-size: 14px; font-weight: 600; }
+            QPushButton { background-color: #D97706; color: #FFFFFF; font-size: 13px; font-weight: bold; border-radius: 6px; padding: 7px 20px; min-width: 68px; }
             QPushButton:hover { background-color: #B45309; }
         """)
         box.exec()
@@ -989,10 +1028,10 @@ class FaceTrackerGUI(QWidget):
         if no_btn:
             no_btn.setText("아니오")
         box.setStyleSheet("""
-            QMessageBox { background-color: #151D2A; border: 1px solid #233044; border-radius: 10px; }
-            QLabel { color: #F8FAFC; font-size: 13px; font-weight: 500; }
-            QPushButton { background-color: #334155; color: #F8FAFC; font-size: 12px; font-weight: 600; border-radius: 6px; padding: 6px 18px; min-width: 60px; }
-            QPushButton:hover { background-color: #475569; }
+            QMessageBox { background-color: #182234; border: 1.5px solid #2D3E5B; border-radius: 10px; font-family: 'Pretendard', 'Malgun Gothic', '맑은 고딕', 'Segoe UI', sans-serif; }
+            QLabel { color: #FFFFFF; font-size: 14px; font-weight: 600; }
+            QPushButton { background-color: #243247; color: #F8FAFC; font-size: 13px; font-weight: 600; border: 1px solid #3D5174; border-radius: 6px; padding: 7px 20px; min-width: 68px; }
+            QPushButton:hover { background-color: #33435C; color: #FFFFFF; border-color: #38BDF8; }
         """)
         return box.exec() == QMessageBox.Yes
 
@@ -1079,12 +1118,30 @@ class FaceTrackerGUI(QWidget):
 
     @Slot(QImage, bool, int, int, int, int, int)
     def update_video_frame(self, q_img, tracking_enabled, nose_x, nose_y, fps, w, h):
-        pixmap = QPixmap.fromImage(q_img)
-        scaled_pix = pixmap.scaled(self.video_canvas.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        self.video_canvas.setPixmap(scaled_pix)
-        
-        self.cam_fps_lbl.setText(f"FPS: {fps} | {w}x{h}")
-        self.cam_name_lbl.setText(f"Device: {self._get_current_cam_name()}")
+        # 1. 창이 최소화되었거나 화면에 보이지 않을 때는 무거운 비디오 렌더링을 완전히 스킵 (CPU/GPU 절전)
+        if self.isMinimized() or not self.isVisible():
+            return
+
+        # 2. Home 탭(인덱스 0)이 아닐 때는 비디오 렌더링을 완전히 스킵 (CPU/GPU 부하 0)
+        if self.page_stack.currentIndex() != 0:
+            return
+            
+        # 3. 메인 스레드가 이전 프레임 처리 중이면 신규 프레임을 드롭하여 Qt 큐 메모리 누적/프리징 방지
+        if self._is_frame_busy:
+            return
+            
+        self._is_frame_busy = True
+        try:
+            pixmap = QPixmap.fromImage(q_img)
+            scaled_pix = pixmap.scaled(self.video_canvas.size(), Qt.KeepAspectRatio, Qt.FastTransformation)
+            self.video_canvas.setPixmap(scaled_pix)
+            
+            self.cam_fps_lbl.setText(f"FPS: {fps} | {w}x{h}")
+            self.cam_name_lbl.setText(f"Device: {self._get_current_cam_name()}")
+        except Exception:
+            pass
+        finally:
+            self._is_frame_busy = False
 
     # 슬라이더 변경 핸들러들
     def _on_sx_changed(self, val):
@@ -1112,6 +1169,11 @@ class FaceTrackerGUI(QWidget):
         self.acc_badge.setText(str(val))
         if hasattr(self.tracker, "yunet_filter"):
             self.tracker.yunet_filter._build_accel_array()
+        config.save_config(self.config)
+
+    def _on_ci_changed(self, val):
+        self.config["correction_interval"] = val
+        self.ci_badge.setText(str(val))
         config.save_config(self.config)
 
     def _on_il_changed(self, val):
@@ -1182,6 +1244,7 @@ class FaceTrackerGUI(QWidget):
         self.th_slider.setValue(defaults["motion_threshold"])
         self.sm_slider.setValue(defaults["smoothing"])
         self.acc_slider.setValue(defaults["acceleration"])
+        self.ci_slider.setValue(defaults["correction_interval"])
         self.il_slider.setValue(int(defaults["illumination_threshold"] * 10))
         self.sp_slider.setValue(int(defaults["spike_threshold"] * 10))
         
@@ -1190,6 +1253,7 @@ class FaceTrackerGUI(QWidget):
         self.th_badge.setText(str(defaults["motion_threshold"]))
         self.sm_badge.setText(str(defaults["smoothing"]))
         self.acc_badge.setText(str(defaults["acceleration"]))
+        self.ci_badge.setText(str(defaults["correction_interval"]))
         self.il_badge.setText(f"{defaults['illumination_threshold']:.1f}")
         self.sp_badge.setText(f"{defaults['spike_threshold']:.1f}px")
         

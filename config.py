@@ -1,14 +1,22 @@
 import json
 import os
+import sys
 
-CONFIG_FILE = "facetracker_config.json"
+def get_base_dir():
+    """실행 파일(Nuitka/PyInstaller) 환경과 일반 스크립트 실행 환경을 자동 감지하여 기준 폴더 반환"""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+CONFIG_FILE = os.path.join(get_base_dir(), "facetracker_config.json")
 
 DEFAULT_PROFILE_DATA = {
-    "sensitivity_x": 27,
-    "sensitivity_y": 27,
+    "sensitivity_x": 25,
+    "sensitivity_y": 25,
     "motion_threshold": 2,
     "smoothing": 3,
     "acceleration": 5,
+    "correction_interval": 5,
     "illumination_threshold": 10.0,
     "spike_threshold": 15.0
 }
@@ -79,6 +87,7 @@ def get_current_profile_data(config):
         "motion_threshold": config.get("motion_threshold", 2),
         "smoothing": config.get("smoothing", 3),
         "acceleration": config.get("acceleration", 5),
+        "correction_interval": config.get("correction_interval", 5),
         "illumination_threshold": config.get("illumination_threshold", 10.0),
         "spike_threshold": config.get("spike_threshold", 15.0)
     }
