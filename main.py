@@ -41,7 +41,7 @@ class NativeMouseController:
     Win32 User32.dll GetCursorPos / SetCursorPos를 직접 호출하는 초고속 순수 픽셀 마우스 컨트롤러.
     Windows OS의 '마우스 가속도'나 '포인터 정확도 향상'으로 인한 속도 뻥튀기 왜곡이 전혀 없으며,
     eViacam 알고리즘이 계산한 정확한 픽셀 단위로만 이동합니다.
-    Python GIL이나 pynput의 락 경합/데드락이 없어 24시간 연속 동작해도 절대 멈추지 않습니다.
+    지연(Latency)이나 관성(Inertia) 없이 프레임 수신 즉시 1:1로 반응합니다.
     """
     def __init__(self):
         self.user32 = ctypes.windll.user32
@@ -191,6 +191,8 @@ def main():
     # 8. 애플리케이션 종료 시 하드웨어 자원 완전 해제 훅 등록
     def clean_up():
         try:
+            if gui:
+                gui._terminate_click_bar()
             if watchdog_timer:
                 watchdog_timer.stop()
             if listener and listener.is_alive():

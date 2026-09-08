@@ -69,6 +69,16 @@ def run_build():
         shutil.copy2(config_src, target_dist)
         print(f"  -> 환경설정 파일 동봉 완료: {config_src}")
 
+    cb_cfg_src = os.path.join(base_dir, "clickbar_config.json")
+    if os.path.exists(cb_cfg_src):
+        shutil.copy2(cb_cfg_src, target_dist)
+        print(f"  -> 클릭바 설정 파일 동봉 완료: {cb_cfg_src}")
+
+    cb_py_src = os.path.join(base_dir, "click_bar.py")
+    if os.path.exists(cb_py_src):
+        shutil.copy2(cb_py_src, target_dist)
+        print(f"  -> 클릭바 스크립트 동봉 완료: {cb_py_src}")
+
     final_dist = os.path.join(dist_dir, "FaceTracker")
     if target_dist != final_dist:
         if os.path.exists(final_dist):

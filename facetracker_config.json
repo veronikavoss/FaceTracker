@@ -7,6 +7,7 @@
     "camera_backend": "DSHOW",
     "camera_width": 640,
     "camera_height": 480,
+    "enable_click_bar": false,
     "current_profile": "my profile",
     "profiles": {
         "기본": {
@@ -32,7 +33,7 @@
     },
     "sensitivity_x": 27,
     "sensitivity_y": 27,
-    "motion_threshold": 2,
+    "motion_threshold": 3,
     "smoothing": 3,
     "acceleration": 5,
     "correction_interval": 5,

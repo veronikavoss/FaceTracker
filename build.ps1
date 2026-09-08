@@ -78,6 +78,18 @@ if (Test-Path $targetDist) {
         Write-Host "  -> Bundled config: $configFile" -ForegroundColor Gray
     }
 
+    $cbConfigFile = Join-Path $scriptDir "clickbar_config.json"
+    if (Test-Path $cbConfigFile) {
+        Copy-Item -Path $cbConfigFile -Destination $targetDist -Force
+        Write-Host "  -> Bundled ClickBar config: $cbConfigFile" -ForegroundColor Gray
+    }
+
+    $cbScriptFile = Join-Path $scriptDir "click_bar.py"
+    if (Test-Path $cbScriptFile) {
+        Copy-Item -Path $cbScriptFile -Destination $targetDist -Force
+        Write-Host "  -> Bundled ClickBar script: $cbScriptFile" -ForegroundColor Gray
+    }
+
     $finalDist = Join-Path $distBase "FaceTracker"
     if ($targetDist -ne $finalDist) {
         Rename-Item -Path $targetDist -NewName "FaceTracker" -Force -ErrorAction SilentlyContinue

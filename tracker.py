@@ -386,7 +386,9 @@ class FaceTracker(threading.Thread):
                                     self.yunet_filter.reset()
                                 
                                 # 2. 마우스 스무딩 필터 적용 및 디스패치
-                                dx, dy = self.yunet_filter.filter(raw_dx, raw_dy)
+                                cur_fps = self.actual_fps if self.actual_fps > 0 else 30.0
+                                dx, dy = self.yunet_filter.filter(raw_dx, raw_dy, actual_fps=cur_fps)
+
                                 if self.on_move_callback and (dx != 0.0 or dy != 0.0):
                                     self.on_move_callback(dx, dy)
                                 

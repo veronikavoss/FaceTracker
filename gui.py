@@ -1,6 +1,7 @@
 import os
 import sys
-from PySide6.QtCore import Qt, QPoint, Signal, Slot, QSize
+import subprocess
+from PySide6.QtCore import Qt, QPoint, Signal, Slot, QSize, QTimer
 from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QIcon, QPainter, QBrush, QPen
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -451,6 +452,16 @@ class FaceTrackerGUI(QWidget):
         self.key_listener = None
         self._is_frame_busy = False
 
+        # 머무름 클릭 바(Click Bar) 서브프로세스 관리
+        self.click_bar_process = None
+        self.click_bar_timer = QTimer(self)
+        self.click_bar_timer.timeout.connect(self._check_click_bar_status)
+        self.click_bar_timer.start(1000)
+
+        # 설정에 따라 시작 시 자동 실행
+        if self.config.get("enable_click_bar", False):
+            QTimer.singleShot(600, self._launch_click_bar)
+
     def _detect_camera_names(self):
         """QMediaDevices를 사용하여 시스템에 연결된 실제 카메라 원래 이름을 검출"""
         devs = QMediaDevices.videoInputs()
@@ -653,6 +664,32 @@ class FaceTrackerGUI(QWidget):
         bc_layout.setContentsMargins(0, 2, 0, 0)
         bc_layout.setAlignment(Qt.AlignCenter)
         
+        # 보조 기능: 머무름 클릭 바 토글 체크박스
+        aux_box = QHBoxLayout()
+        aux_box.setAlignment(Qt.AlignCenter)
+        self.click_bar_chk = QCheckBox("🖱️  머무름 클릭 바 (Click Bar) 함께 실행")
+        self.click_bar_chk.setCursor(Qt.PointingHandCursor)
+        self.click_bar_chk.setStyleSheet("""
+            QCheckBox {
+                color: #38BDF8;
+                font-size: 13px;
+                font-weight: 700;
+                padding: 6px 14px;
+                background-color: #111A29;
+                border: 1.5px solid #233044;
+                border-radius: 6px;
+            }
+            QCheckBox:hover {
+                border-color: #38BDF8;
+                background-color: #162235;
+            }
+        """)
+        self.click_bar_chk.setChecked(self.config.get("enable_click_bar", False))
+        self.click_bar_chk.toggled.connect(self._on_click_bar_toggled)
+        aux_box.addWidget(self.click_bar_chk)
+        bc_layout.addLayout(aux_box)
+        bc_layout.addSpacing(6)
+
         self.start_btn = QPushButton("▶   START TRACKING (F12)")
         self.start_btn.setObjectName("StartButton")
         self.start_btn.setCheckable(True)
@@ -1299,17 +1336,73 @@ class FaceTrackerGUI(QWidget):
         self.key_listener = keyboard.Listener(on_press=on_press_temp)
         self.key_listener.start()
 
+    # ========================================================
+    # 머무름 클릭 바(Click Bar) 수명주기 관리
+    # ========================================================
+    def _launch_click_bar(self):
+        if self.click_bar_process is not None and self.click_bar_process.poll() is None:
+            return  # 이미 실행 중
+        
+        base_dir = config.get_base_dir()
+        exe_path = os.path.join(base_dir, "ClickBar.exe")
+        py_path = os.path.join(base_dir, "click_bar.py")
+        
+        try:
+            if os.path.exists(exe_path):
+                self.click_bar_process = subprocess.Popen([exe_path])
+            elif os.path.exists(py_path):
+                self.click_bar_process = subprocess.Popen([sys.executable, py_path])
+            print("[FaceTracker] 머무름 클릭 바(Click Bar)가 실행되었습니다.")
+        except Exception as e:
+            print(f"[FaceTracker] 클릭바 실행 실패: {e}")
+
+    def _terminate_click_bar(self):
+        if self.click_bar_process is not None and self.click_bar_process.poll() is None:
+            try:
+                self.click_bar_process.terminate()
+                self.click_bar_process.wait(timeout=1.0)
+            except Exception:
+                try:
+                    self.click_bar_process.kill()
+                except Exception:
+                    pass
+            print("[FaceTracker] 머무름 클릭 바(Click Bar)가 정상 종료되었습니다.")
+            self.click_bar_process = None
+
+    def _on_click_bar_toggled(self, checked):
+        self.config["enable_click_bar"] = checked
+        config.save_config(self.config)
+        if checked:
+            self._launch_click_bar()
+        else:
+            self._terminate_click_bar()
+
+    def _check_click_bar_status(self):
+        if hasattr(self, 'click_bar_process') and self.click_bar_process is not None:
+            if self.click_bar_process.poll() is not None:
+                # 프로세스가 외부에서 종료됨
+                self.click_bar_process = None
+                if hasattr(self, 'click_bar_chk') and self.click_bar_chk.isChecked():
+                    self.click_bar_chk.blockSignals(True)
+                    self.click_bar_chk.setChecked(False)
+                    self.click_bar_chk.blockSignals(False)
+                    self.config["enable_click_bar"] = False
+                    config.save_config(self.config)
+
     def closeEvent(self, event):
         """창 종료 시 웹캠 장치 점유를 완전히 해제하고 백그라운드 스레드를 안전하게 종료합니다."""
         print("[FaceTracker] 애플리케이션 종료 절차 시작...")
-        # 1. 단축키 녹음 리스너 정리
+        # 1. 클릭바 서브프로세스 안전 종료
+        self._terminate_click_bar()
+
+        # 2. 단축키 녹음 리스너 정리
         if hasattr(self, 'key_listener') and self.key_listener and self.key_listener.is_alive():
             try:
                 self.key_listener.stop()
             except Exception:
                 pass
 
-        # 2. 트래커 스레드 및 웹캠 하드웨어 락 해제
+        # 3. 트래커 스레드 및 웹캠 하드웨어 락 해제
         if self.tracker:
             try:
                 self.tracker.stop_tracker()
