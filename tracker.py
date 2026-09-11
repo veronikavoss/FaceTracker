@@ -46,6 +46,10 @@ class FaceTracker(threading.Thread):
         # YuNet 모델 로드
         self.yunet_detector = None
         self._init_yunet()
+        
+        # 스레드 안전 카메라 동기화 락 및 안전한 재시작 플래그
+        self.camera_lock = threading.Lock()
+        self._restart_requested = False
 
     def _compute_file_sha256(self, filepath):
         """파일의 SHA-256 체크섬을 계산하여 반환합니다."""
@@ -130,6 +134,18 @@ class FaceTracker(threading.Thread):
     def stop_tracker(self):
         self.running = False
         self.tracking_enabled = False
+        with self.camera_lock:
+            if self.cap and self.cap.isOpened():
+                try:
+                    self.cap.release()
+                except Exception:
+                    pass
+                self.cap = None
+
+    def restart_camera(self):
+        """GUI 또는 외부 스레드에서 안전하게 카메라 재설정을 요청 (스레드 간 충돌 100% 방지)"""
+        self._restart_requested = True
+        self.last_heartbeat = time.time()
 
     def set_tracking(self, enabled):
         self.tracking_enabled = enabled
@@ -242,17 +258,29 @@ class FaceTracker(threading.Thread):
                 self.cap = cv2.VideoCapture(cam_id, cv2.CAP_ANY)
                 
             if self.cap.isOpened():
-                fourcc_code = cv2.VideoWriter_fourcc(*'YUY2')
-                self.cap.set(cv2.CAP_PROP_FOURCC, fourcc_code)
-                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, target_w)
-                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, target_h)
-                self.cap.set(cv2.CAP_PROP_FPS, target_fps)
-                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                # 60 FPS 이상이거나 고주사율 모드일 때는 대역폭이 넓은 MJPG 우선 적용
+                # 30 FPS 이하일 때는 압축 딜레이가 없는 무압축 YUY2 우선 적용
+                preferred_codecs = ['MJPG', 'YUY2'] if target_fps > 30 else ['YUY2', 'MJPG']
                 
-                w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                fps = int(self.cap.get(cv2.CAP_PROP_FPS))
-                print(f"[카메라 설정] 해상도: {w}x{h} | FPS: {fps}")
+                applied_fps = 0
+                for codec in preferred_codecs:
+                    fourcc = cv2.VideoWriter_fourcc(*codec)
+                    self.cap.set(cv2.CAP_PROP_FOURCC, fourcc)
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, target_w)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, target_h)
+                    self.cap.set(cv2.CAP_PROP_FPS, target_fps)
+                    self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    
+                    w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    applied_fps = int(self.cap.get(cv2.CAP_PROP_FPS))
+                    if applied_fps >= target_fps - 5:
+                        print(f"[카메라 설정] 코덱: {codec} | 해상도: {w}x{h} | FPS: {applied_fps}")
+                        break
+                else:
+                    w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    print(f"[카메라 설정] 해상도: {w}x{h} | FPS: {applied_fps}")
                 
                 auto_exp = self.config.get("auto_exposure", True)
                 lock_fps = self.config.get("lock_fps_low_light", False)
@@ -266,9 +294,10 @@ class FaceTracker(threading.Thread):
         return False
 
     def run(self):
-        if not self._open_camera():
-            self.running = False
-            return
+        with self.camera_lock:
+            if not self._open_camera():
+                self.running = False
+                return
 
         prev_time = time.time()
         fps_smoothing = 0.9
@@ -277,27 +306,48 @@ class FaceTracker(threading.Thread):
 
         while self.running:
             try:
-                # 1. 카메라 장치 열림 확인 및 복구
-                if self.cap is None or not self.cap.isOpened():
-                    print("[트래커 복구] 카메라가 닫혀 있어 재연결을 시도합니다...")
-                    if not self._open_camera():
-                        time.sleep(0.5)
-                        continue
+                # 0. 외부에서 카메라 재시작/설정 변경이 요청된 경우 스레드 루프 내에서 안전하게 재오픈
+                if self._restart_requested:
+                    self._restart_requested = False
+                    self.last_heartbeat = time.time()
+                    print("[트래커] 카메라 설정 변경 요청 수신 -> 스레드 안전 재연결 시작...")
+                    with self.camera_lock:
+                        if self.cap is not None:
+                            try:
+                                if self.cap.isOpened():
+                                    self.cap.release()
+                            except Exception:
+                                pass
+                            self.cap = None
+                        time.sleep(0.1)
+                        self._open_camera()
+                    continue
 
-                # 2. 프레임 캡처 및 연속 실패 감시
-                ret, frame = self.cap.read()
+                # 1. 카메라 장치 열림 확인 및 복구
+                with self.camera_lock:
+                    if self.cap is None or not self.cap.isOpened():
+                        print("[트래커 복구] 카메라가 닫혀 있어 재연결을 시도합니다...")
+                        if not self._open_camera():
+                            time.sleep(0.5)
+                            continue
+
+                    # 2. 프레임 캡처 및 연속 실패 감시
+                    ret, frame = self.cap.read()
+                    
                 if not ret or frame is None:
                     self.consecutive_fails += 1
                     # 약 1초(30프레임) 연속 캡처 실패 시 USB/드라이버 자동 재연결
                     if self.consecutive_fails >= 30:
                         print(f"[트래커 경고] 카메라 프레임 {self.consecutive_fails}회 연속 수신 실패 -> 카메라 자동 재연결 시도...")
-                        try:
-                            if self.cap:
-                                self.cap.release()
-                        except Exception:
-                            pass
-                        time.sleep(0.3)
-                        self._open_camera()
+                        with self.camera_lock:
+                            try:
+                                if self.cap:
+                                    self.cap.release()
+                            except Exception:
+                                pass
+                            self.cap = None
+                            time.sleep(0.3)
+                            self._open_camera()
                         self.consecutive_fails = 0
                     time.sleep(0.01)
                     continue

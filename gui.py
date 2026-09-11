@@ -463,14 +463,28 @@ class FaceTrackerGUI(QWidget):
             QTimer.singleShot(600, self._launch_click_bar)
 
     def _detect_camera_names(self):
-        """QMediaDevices를 사용하여 시스템에 연결된 실제 카메라 원래 이름을 검출"""
-        devs = QMediaDevices.videoInputs()
+        """QMediaDevices 및 Windows PnP 조회를 통해 시스템에 연결된 실제 카메라 원래 이름을 100% 검출"""
         result = []
-        for i, d in enumerate(devs):
-            name = d.description()
-            if not name:
-                name = f"카메라 {i}"
-            result.append((i, name))
+        try:
+            devs = QMediaDevices.videoInputs()
+            for i, d in enumerate(devs):
+                name = d.description()
+                if name:
+                    result.append((i, name))
+        except Exception:
+            pass
+
+        # QMediaDevices가 비어있거나 장치 이름이 없는 경우 Windows PnP 시스템 쿼리로 실제 이름 검출
+        if not result:
+            try:
+                import subprocess
+                cmd = 'powershell -NoProfile -Command "Get-PnpDevice -Class Camera,Image -Status OK | Select-Object -ExpandProperty FriendlyName"'
+                out = subprocess.check_output(cmd, shell=True, timeout=2.5).decode('utf-8', errors='ignore')
+                pnp_names = [line.strip() for line in out.splitlines() if line.strip()]
+                for i, name in enumerate(pnp_names):
+                    result.append((i, name))
+            except Exception:
+                pass
             
         if not result:
             result = [(0, "기본 카메라 (카메라 0)"), (1, "카메라 1")]
@@ -609,27 +623,24 @@ class FaceTrackerGUI(QWidget):
         self.cam_combo.setCurrentIndex(cur_idx)
         self.cam_combo.currentIndexChanged.connect(self._on_camera_changed)
         
-        res_lbl = QLabel("해상도:")
-        res_lbl.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 600; margin-left: 12px;")
-        self.res_combo = QComboBox()
-        self.res_combo.addItems(["640x480", "1280x720", "320x240"])
-        cur_res = f"{self.config.get('camera_width', 640)}x{self.config.get('camera_height', 480)}"
-        self.res_combo.setCurrentText(cur_res)
-        self.res_combo.currentIndexChanged.connect(self._on_resolution_changed)
-        
-        fps_lbl = QLabel("FPS:")
-        fps_lbl.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 600; margin-left: 12px;")
-        self.fps_combo = QComboBox()
-        self.fps_combo.addItems(["30", "60"])
-        self.fps_combo.setCurrentText(str(self.config.get("target_fps", 30)))
-        self.fps_combo.currentIndexChanged.connect(self._on_fps_changed)
-        
         row1.addWidget(cam_lbl)
         row1.addWidget(self.cam_combo, 1)
-        row1.addWidget(res_lbl)
-        row1.addWidget(self.res_combo)
-        row1.addWidget(fps_lbl)
-        row1.addWidget(self.fps_combo)
+        
+        opt_badge = QLabel("⚡ 640×480 @ 30 FPS (추적 최적화)")
+        opt_badge.setStyleSheet("""
+            QLabel {
+                color: #38BDF8;
+                background-color: #0F172A;
+                border: 1px solid rgba(56, 189, 248, 0.35);
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-size: 12px;
+                font-weight: 600;
+                margin-left: 12px;
+            }
+        """)
+        opt_badge.setToolTip("인풋렉 0과 저조도 노이즈 억제를 위해 얼굴 마우스 표준인 640×480 @ 30 FPS 최적 모드로 고정되어 있습니다.")
+        row1.addWidget(opt_badge)
         cc_layout.addLayout(row1)
         
         # 2행: 자동 노출 및 저조도 고정 체크박스
@@ -1236,23 +1247,7 @@ class FaceTrackerGUI(QWidget):
             self.cam_name_lbl.setText(f"Device: {cname}")
             self._restart_camera()
 
-    def _on_resolution_changed(self, txt):
-        try:
-            w, h = map(int, txt.split('x'))
-            if w != self.config.get("camera_width", 640) or h != self.config.get("camera_height", 480):
-                self.config["camera_width"] = w
-                self.config["camera_height"] = h
-                config.save_config(self.config)
-                self._restart_camera()
-        except Exception as e:
-            print(f"해상도 파싱 에러: {e}")
 
-    def _on_fps_changed(self, txt):
-        fps_val = int(txt)
-        if fps_val != self.config.get("target_fps", 30):
-            self.config["target_fps"] = fps_val
-            config.save_config(self.config)
-            self._restart_camera()
 
     def _on_auto_exp_toggled(self, checked):
         self.config["auto_exposure"] = checked
@@ -1301,9 +1296,7 @@ class FaceTrackerGUI(QWidget):
 
     def _restart_camera(self):
         if self.tracker:
-            if self.tracker.cap and self.tracker.cap.isOpened():
-                self.tracker.cap.release()
-            self.tracker._open_camera()
+            self.tracker.restart_camera()
 
     def _start_hotkey_recording(self):
         if self.is_recording_hotkey:

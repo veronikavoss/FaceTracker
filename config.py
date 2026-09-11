@@ -26,6 +26,7 @@ DEFAULT_CONFIG = {
     "tracking_toggle_key": "f12",  # 활성/비활성 전환 키
     "auto_exposure": True,        # 카메라 자동 노출 활성화
     "lock_fps_low_light": False,  # 수동 노출 고정 여부
+    "low_light_compensation": False, # 낮은 빛 보상 활성화 여부 (기본 해제)
     "target_fps": 30,             # 카메라 타겟 FPS 설정
     "camera_backend": "DSHOW",    # 카메라 백엔드 API
     "camera_width": 640,          # 카메라 해상도 가로
