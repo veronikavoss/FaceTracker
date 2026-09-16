@@ -501,52 +501,66 @@ class FaceTrackerGUI(QWidget):
         self.click_bar_timer.timeout.connect(self._check_click_bar_status)
         self.click_bar_timer.start(200)
 
-        # 설정에 따라 시작 시 자동 실행
+        # 설정에 따라 시작 시 홈 화면 토글을 켜서 클릭바 자동 실행 (다음에 FaceTracker 열었을 때 적용)
         if self.config.get("enable_click_bar", False):
-            QTimer.singleShot(600, self._launch_click_bar)
+            QTimer.singleShot(400, lambda: self.click_bar_chk.setChecked(True))
 
     def _detect_camera_names(self):
-        """QMediaDevices와 DirectShow 유효 인덱스를 정밀 매핑하여 실제 작동 가능한 카메라 목록 검출"""
-        result = []
+        """QMediaDevices 및 Windows PnP 쿼리로 실제 카메라 하드웨어 이름과 DirectShow 인덱스를 100% 매핑"""
+        # 1. DirectShow 백엔드로 실제 캡처 가능한 유효 인덱스 수집 (0~3 범위)
+        valid_dshow_ids = []
         try:
             import cv2
-            devs = QMediaDevices.videoInputs()
-            
-            # DirectShow 백엔드로 실제 캡처 가능한 유효 인덱스 수집 (0~3 범위 탐색)
-            valid_dshow_ids = []
             for i in range(4):
                 cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
                 if cap.isOpened():
                     valid_dshow_ids.append(i)
                     cap.release()
-
-            if devs:
-                for idx, d in enumerate(devs):
-                    name = d.description()
-                    if name:
-                        # QMediaDevices 순서에 대응하는 실제 작동 DirectShow 인덱스 매핑 (예: BRIO=0, ABKO=2)
-                        real_id = valid_dshow_ids[idx] if idx < len(valid_dshow_ids) else idx
-                        result.append((real_id, name))
-            elif valid_dshow_ids:
-                for i in valid_dshow_ids:
-                    result.append((i, f"카메라 {i}"))
         except Exception as e:
-            print(f"[카메라 감지 예외] {e}")
+            print(f"[카메라 감지] DirectShow 스캔 예외: {e}")
 
-        # QMediaDevices가 비어있거나 장치 이름이 없는 경우 Windows PnP 시스템 쿼리로 실제 이름 검출
-        if not result:
+        # 2. 실제 연결된 카메라 장치 명칭 수집
+        device_names = []
+        # 2-1. 1차 시도: QMediaDevices
+        try:
+            devs = QMediaDevices.videoInputs()
+            for d in devs:
+                dname = d.description().strip()
+                if dname and dname not in device_names:
+                    device_names.append(dname)
+        except Exception as e:
+            print(f"[카메라 감지] QMediaDevices 예외: {e}")
+
+        # 2-2. 2차 시도: device_names가 비어있거나 부족할 때 PowerShell PnP 쿼리로 100% 보완
+        if not device_names or (valid_dshow_ids and len(device_names) < len(valid_dshow_ids)):
             try:
                 import subprocess
+                flags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
                 cmd = 'powershell -NoProfile -Command "Get-PnpDevice -Class Camera,Image -Status OK | Select-Object -ExpandProperty FriendlyName"'
-                out = subprocess.check_output(cmd, shell=True, timeout=2.5).decode('utf-8', errors='ignore')
+                out = subprocess.check_output(cmd, shell=True, timeout=2.5, creationflags=flags).decode('utf-8', errors='ignore')
                 pnp_names = [line.strip() for line in out.splitlines() if line.strip()]
-                for i, name in enumerate(pnp_names):
-                    result.append((i, name))
-            except Exception:
-                pass
-            
-        if not result:
+                for pname in pnp_names:
+                    if pname not in device_names:
+                        device_names.append(pname)
+            except Exception as pe:
+                print(f"[카메라 감지] PnP 쿼리 예외: {pe}")
+
+        # 3. 유효 DirectShow 인덱스와 실제 하드웨어 이름 매핑
+        result = []
+        if valid_dshow_ids:
+            for idx, dshow_id in enumerate(valid_dshow_ids):
+                if idx < len(device_names):
+                    name = device_names[idx]
+                else:
+                    name = f"카메라 {dshow_id}"
+                result.append((dshow_id, name))
+        elif device_names:
+            for idx, name in enumerate(device_names):
+                result.append((idx, name))
+        else:
             result = [(0, "기본 카메라 (카메라 0)"), (1, "카메라 1")]
+
+        print(f"[카메라 감지 완료] 검출된 카메라 목록: {result}")
         return result
 
     def _get_current_cam_name(self):
@@ -750,7 +764,7 @@ class FaceTrackerGUI(QWidget):
                 background-color: #162235;
             }
         """)
-        self.click_bar_chk.setChecked(self.config.get("enable_click_bar", False))
+        self.click_bar_chk.setChecked(False)
         self.click_bar_chk.toggled.connect(self._on_click_bar_toggled)
         aux_box.addWidget(self.click_bar_chk)
         bc_layout.addLayout(aux_box)
@@ -1454,9 +1468,38 @@ class FaceTrackerGUI(QWidget):
         try:
             if os.path.exists(exe_path):
                 self.click_bar_process = subprocess.Popen([exe_path])
+                print(f"[FaceTracker] ClickBar.exe 바이너리 실행 완료: {exe_path}")
             elif os.path.exists(py_path):
-                self.click_bar_process = subprocess.Popen([sys.executable, py_path])
-            print("[FaceTracker] 머무름 클릭 바(Click Bar)가 실행되었습니다.")
+                exe_name = os.path.basename(sys.executable).lower()
+                if "python" in exe_name:
+                    python_exe = sys.executable
+                    pythonw_cand = os.path.join(os.path.dirname(python_exe), "pythonw.exe")
+                    if os.path.exists(pythonw_cand):
+                        python_exe = pythonw_cand
+                    self.click_bar_process = subprocess.Popen([python_exe, py_path])
+                else:
+                    # 배포된 FaceTracker.exe 환경에서 ClickBar.exe가 아직 없을 때 pythonw 탐색
+                    import shutil
+                    pyw_candidates = [
+                        r"D:\Program Files\Python\pythonw.exe",
+                        r"D:\Program Files\Python\python.exe",
+                        shutil.which("pythonw"),
+                        shutil.which("python"),
+                    ]
+                    found_py = None
+                    for cand in pyw_candidates:
+                        if cand and os.path.exists(cand):
+                            found_py = cand
+                            break
+                    if found_py:
+                        self.click_bar_process = subprocess.Popen([found_py, py_path])
+                    else:
+                        bat_path = os.path.join(base_dir, "run_clickbar.bat")
+                        if os.path.exists(bat_path):
+                            self.click_bar_process = subprocess.Popen(["cmd.exe", "/c", bat_path])
+                        else:
+                            self.click_bar_process = subprocess.Popen(["pythonw", py_path], shell=True)
+                print("[FaceTracker] click_bar.py 파이썬 스크립트 실행 완료!")
         except Exception as e:
             print(f"[FaceTracker] 클릭바 실행 실패: {e}")
 
@@ -1474,31 +1517,20 @@ class FaceTrackerGUI(QWidget):
             self.click_bar_process = None
 
     def _on_settings_click_bar_toggled(self, checked):
-        """Settings 페이지의 앱 실행 시 클릭바 실행 체크박스 핸들러"""
-        self._on_click_bar_toggled(checked)
-
-    def _on_click_bar_toggled(self, checked):
+        """Settings 페이지의 '앱 실행 시 클릭바 실행' 설정 핸들러 (다음 시작 시 적용, 현재 프로세스는 건드리지 않음)"""
         self.config["enable_click_bar"] = checked
         config.save_config(self.config)
+        print(f"[FaceTracker] 시작 시 클릭바 자동 실행 설정 저장됨: {checked} (현재 실행 상태는 변경되지 않음)")
 
-        # Home 탭과 Settings 탭 체크박스 상태 양방향 실시간 동기화
-        if hasattr(self, 'click_bar_chk') and self.click_bar_chk.isChecked() != checked:
-            self.click_bar_chk.blockSignals(True)
-            self.click_bar_chk.setChecked(checked)
-            self.click_bar_chk.blockSignals(False)
-
-        if hasattr(self, 'settings_click_bar_chk') and self.settings_click_bar_chk.isChecked() != checked:
-            self.settings_click_bar_chk.blockSignals(True)
-            self.settings_click_bar_chk.setChecked(checked)
-            self.settings_click_bar_chk.blockSignals(False)
-
+    def _on_click_bar_toggled(self, checked):
+        """Home 페이지의 머무름 클릭 바 토글: 현재 클릭바 즉시 켜기/끄기 실시간 제어"""
         if checked:
             self._launch_click_bar()
         else:
             self._terminate_click_bar()
 
     def _check_click_bar_status(self):
-        # 1. 서브프로세스 종료 감지
+        """외부에서 클릭바 창이 닫혔을 때 Home 토글만 해제 (Settings 영구 설정값은 보존)"""
         if hasattr(self, 'click_bar_process') and self.click_bar_process is not None:
             if self.click_bar_process.poll() is not None:
                 # 프로세스가 외부(EXIT 버튼 등)에서 종료됨
@@ -1507,25 +1539,7 @@ class FaceTrackerGUI(QWidget):
                     self.click_bar_chk.blockSignals(True)
                     self.click_bar_chk.setChecked(False)
                     self.click_bar_chk.blockSignals(False)
-                if hasattr(self, 'settings_click_bar_chk') and self.settings_click_bar_chk.isChecked():
-                    self.settings_click_bar_chk.blockSignals(True)
-                    self.settings_click_bar_chk.setChecked(False)
-                    self.settings_click_bar_chk.blockSignals(False)
-                self.config["enable_click_bar"] = False
-                config.save_config(self.config)
-                print("[FaceTracker] 클릭 바(Click Bar)가 닫혀 체크박스를 해제했습니다.")
-        # 2. 체크박스가 켜져 있는데 프로세스가 존재하지 않는 비정상 상태 복구
-        elif hasattr(self, 'click_bar_chk') and self.click_bar_chk.isChecked():
-            # config에 enable_click_bar가 꺼졌거나 프로세스가 없는 경우 체크 해제
-            self.click_bar_chk.blockSignals(True)
-            self.click_bar_chk.setChecked(False)
-            self.click_bar_chk.blockSignals(False)
-            if hasattr(self, 'settings_click_bar_chk') and self.settings_click_bar_chk.isChecked():
-                self.settings_click_bar_chk.blockSignals(True)
-                self.settings_click_bar_chk.setChecked(False)
-                self.settings_click_bar_chk.blockSignals(False)
-            self.config["enable_click_bar"] = False
-            config.save_config(self.config)
+                print("[FaceTracker] 외부에서 클릭바가 닫혀 홈 토글을 해제했습니다.")
 
     def closeEvent(self, event):
         """창 종료 시 웹캠 장치 점유를 완전히 해제하고 백그라운드 스레드를 안전하게 종료합니다."""

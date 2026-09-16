@@ -8,7 +8,7 @@
     "camera_backend": "DSHOW",
     "camera_width": 640,
     "camera_height": 480,
-    "enable_click_bar": false,
+    "enable_click_bar": true,
     "auto_start_windows": true,
     "current_profile": "my profile",
     "profiles": {

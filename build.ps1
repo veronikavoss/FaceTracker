@@ -42,6 +42,7 @@ $nuitkaArgs = @(
     "--windows-console-mode=disable",
     "--output-dir=dist",
     "--output-filename=FaceTracker.exe",
+    "--windows-icon-from-ico=facetracker.ico",
     "--assume-yes-for-downloads",
     "--jobs=2",
     "--nofollow-import-to=tkinter,unittest,pytest,pydoc,sqlite3,IPython,jupyter,matplotlib,scipy,mediapipe",
@@ -50,9 +51,26 @@ $nuitkaArgs = @(
 
 & $python $nuitkaArgs
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Nuitka compilation failed."
+    Write-Error "Nuitka FaceTracker compilation failed."
     exit $LASTEXITCODE
 }
+
+Write-Host "[3.5/4] Compiling ClickBar.exe..." -ForegroundColor Cyan
+$cbArgs = @(
+    "-m", "nuitka",
+    "--standalone",
+    "--enable-plugin=pyside6",
+    "--windows-console-mode=disable",
+    "--output-dir=dist",
+    "--output-filename=ClickBar.exe",
+    "--windows-icon-from-ico=clickbar.ico",
+    "--assume-yes-for-downloads",
+    "--jobs=2",
+    "--low-memory",
+    "--nofollow-import-to=tkinter,unittest,pytest,pydoc,sqlite3,IPython,jupyter,matplotlib,scipy,mediapipe,cv2",
+    "click_bar.py"
+)
+& $python $cbArgs
 
 # 5. Copy model and config files
 Write-Host "[4/4] Bundling ONNX model and config files into dist..." -ForegroundColor Cyan
@@ -82,6 +100,17 @@ if (Test-Path $targetDist) {
     if (Test-Path $cbConfigFile) {
         Copy-Item -Path $cbConfigFile -Destination $targetDist -Force
         Write-Host "  -> Bundled ClickBar config: $cbConfigFile" -ForegroundColor Gray
+    }
+
+    $cbDist = Join-Path $distBase "click_bar.dist"
+    if (-not (Test-Path $cbDist)) { $cbDist = Join-Path $distBase "ClickBar.dist" }
+    if (Test-Path $cbDist) {
+        $cbExe = Join-Path $cbDist "ClickBar.exe"
+        if (Test-Path $cbExe) {
+            Copy-Item -Path $cbExe -Destination $targetDist -Force
+            Write-Host "  -> Bundled ClickBar executable: $cbExe" -ForegroundColor Gray
+        }
+        Remove-Item -Recurse -Force $cbDist -ErrorAction SilentlyContinue
     }
 
     $cbScriptFile = Join-Path $scriptDir "click_bar.py"
