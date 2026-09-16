@@ -15,6 +15,45 @@ import numpy as np
 import config
 from pynput import keyboard
 
+REG_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+REG_APP_NAME = "EnableViaCam_FaceTracker"
+
+def is_auto_start_windows_registered() -> bool:
+    """Windows 시작 프로그램 레지스트리에 등록되어 있는지 검사"""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_KEY, 0, winreg.KEY_READ) as key:
+            winreg.QueryValueEx(key, REG_APP_NAME)
+            return True
+    except Exception:
+        return False
+
+def set_auto_start_windows(enable: bool) -> bool:
+    """Windows 시작 프로그램 레지스트리 등록 또는 삭제"""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            if enable:
+                base_dir = config.get_base_dir()
+                if getattr(sys, 'frozen', False):
+                    cmd = f'"{sys.executable}"'
+                else:
+                    main_py = os.path.join(base_dir, "main.py")
+                    py_dir = os.path.dirname(sys.executable)
+                    pyw = os.path.join(py_dir, "pythonw.exe")
+                    exe_to_use = pyw if os.path.exists(pyw) else sys.executable
+                    cmd = f'"{exe_to_use}" "{main_py}"'
+                winreg.SetValueEx(key, REG_APP_NAME, 0, winreg.REG_SZ, cmd)
+            else:
+                try:
+                    winreg.DeleteValue(key, REG_APP_NAME)
+                except FileNotFoundError:
+                    pass
+        return True
+    except Exception as e:
+        print(f"[시작프로그램 레지스트리 오류]: {e}")
+        return False
+
 class DarkInputDialog(QDialog):
     """글자와 버튼이 선명하고 아름답게 보이는 다크 테마 입력 대화상자"""
     def __init__(self, parent, title, prompt):
@@ -402,6 +441,10 @@ class FaceTrackerGUI(QWidget):
         
         self.setStyleSheet(STYLE_SHEET)
         
+        ico_path = os.path.join(config.get_base_dir(), "facetracker.ico")
+        if os.path.exists(ico_path):
+            self.setWindowIcon(QIcon(ico_path))
+        
         # 카메라 하드웨어 이름 매핑 리스트: [(id, name), ...]
         self.camera_device_list = self._detect_camera_names()
         
@@ -456,23 +499,39 @@ class FaceTrackerGUI(QWidget):
         self.click_bar_process = None
         self.click_bar_timer = QTimer(self)
         self.click_bar_timer.timeout.connect(self._check_click_bar_status)
-        self.click_bar_timer.start(1000)
+        self.click_bar_timer.start(200)
 
         # 설정에 따라 시작 시 자동 실행
         if self.config.get("enable_click_bar", False):
             QTimer.singleShot(600, self._launch_click_bar)
 
     def _detect_camera_names(self):
-        """QMediaDevices 및 Windows PnP 조회를 통해 시스템에 연결된 실제 카메라 원래 이름을 100% 검출"""
+        """QMediaDevices와 DirectShow 유효 인덱스를 정밀 매핑하여 실제 작동 가능한 카메라 목록 검출"""
         result = []
         try:
+            import cv2
             devs = QMediaDevices.videoInputs()
-            for i, d in enumerate(devs):
-                name = d.description()
-                if name:
-                    result.append((i, name))
-        except Exception:
-            pass
+            
+            # DirectShow 백엔드로 실제 캡처 가능한 유효 인덱스 수집 (0~3 범위 탐색)
+            valid_dshow_ids = []
+            for i in range(4):
+                cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+                if cap.isOpened():
+                    valid_dshow_ids.append(i)
+                    cap.release()
+
+            if devs:
+                for idx, d in enumerate(devs):
+                    name = d.description()
+                    if name:
+                        # QMediaDevices 순서에 대응하는 실제 작동 DirectShow 인덱스 매핑 (예: BRIO=0, ABKO=2)
+                        real_id = valid_dshow_ids[idx] if idx < len(valid_dshow_ids) else idx
+                        result.append((real_id, name))
+            elif valid_dshow_ids:
+                for i in valid_dshow_ids:
+                    result.append((i, f"카메라 {i}"))
+        except Exception as e:
+            print(f"[카메라 감지 예외] {e}")
 
         # QMediaDevices가 비어있거나 장치 이름이 없는 경우 Windows PnP 시스템 쿼리로 실제 이름 검출
         if not result:
@@ -580,24 +639,36 @@ class FaceTrackerGUI(QWidget):
         vc_header.addWidget(self.badge_detected)
         vc_layout.addLayout(vc_header)
         
-        # 비디오 캔버스 라벨 (가로 540px, 세로 360px)
+        # 비디오 캔버스 라벨 (가로 480px, 세로 330px - 4:3 비율 최적화)
         self.video_canvas = QLabel()
-        self.video_canvas.setFixedSize(540, 360)
+        self.video_canvas.setFixedSize(480, 330)
         self.video_canvas.setStyleSheet("background-color: #000000; border: 1.5px solid #2B3A54; border-radius: 8px;")
         self.video_canvas.setAlignment(Qt.AlignCenter)
         vc_layout.addWidget(self.video_canvas, 0, Qt.AlignCenter)
         
-        # 하단 카메라 메타정보 바
-        vc_footer = QHBoxLayout()
+        # 하단 카메라 메타정보 바 (비디오 화면과 완전히 분리된 전용 독립 정보 바)
+        vc_footer_frame = QFrame()
+        vc_footer_frame.setStyleSheet("""
+            QFrame {
+                background-color: #0B111E;
+                border: 1px solid #1E293B;
+                border-radius: 6px;
+            }
+        """)
+        vc_footer = QHBoxLayout(vc_footer_frame)
+        vc_footer.setContentsMargins(12, 6, 12, 6)
+        
         self.cam_name_lbl = QLabel(f"Device: {self._get_current_cam_name()}")
-        self.cam_name_lbl.setStyleSheet("color: #E2E8F0; font-size: 12px; font-weight: 600;")
+        self.cam_name_lbl.setStyleSheet("color: #CBD5E1; font-size: 12px; font-weight: 600; border: none; background: transparent;")
         
         self.cam_fps_lbl = QLabel("FPS: 0 | 640x480")
-        self.cam_fps_lbl.setStyleSheet("color: #38BDF8; font-size: 12px; font-weight: 800;")
+        self.cam_fps_lbl.setStyleSheet("color: #38BDF8; font-size: 12px; font-weight: 800; border: none; background: transparent;")
         vc_footer.addWidget(self.cam_name_lbl)
         vc_footer.addStretch()
         vc_footer.addWidget(self.cam_fps_lbl)
-        vc_layout.addLayout(vc_footer)
+        
+        vc_layout.addSpacing(4)
+        vc_layout.addWidget(vc_footer_frame)
         
         layout.addWidget(video_card)
         
@@ -643,23 +714,7 @@ class FaceTrackerGUI(QWidget):
         row1.addWidget(opt_badge)
         cc_layout.addLayout(row1)
         
-        # 2행: 자동 노출 및 저조도 고정 체크박스
-        row2 = QHBoxLayout()
-        self.auto_exp_chk = QCheckBox("카메라 자동 노출 켜기 (Auto Exposure)")
-        self.auto_exp_chk.setChecked(self.config.get("auto_exposure", True))
-        self.auto_exp_chk.toggled.connect(self._on_auto_exp_toggled)
-        
-        self.lock_fps_chk = QCheckBox("저조도 30FPS 수동 고정")
-        self.lock_fps_chk.setChecked(self.config.get("lock_fps_low_light", False))
-        self.lock_fps_chk.toggled.connect(self._on_lock_fps_toggled)
-        
-        row2.addWidget(self.auto_exp_chk)
-        row2.addSpacing(24)
-        row2.addWidget(self.lock_fps_chk)
-        row2.addStretch()
-        cc_layout.addLayout(row2)
-        
-        # 3행: 카메라 고급 설정 창 열기 버튼
+        # 2행: 카메라 고급 설정 창 열기 버튼 (홈 화면을 심플하게 정돈)
         adv_cam_btn = QPushButton("📷  카메라 고급 설정 창 열기 (DirectShow Property Page)")
         adv_cam_btn.setProperty("class", "SecondaryButton")
         adv_cam_btn.setCursor(Qt.PointingHandCursor)
@@ -760,7 +815,59 @@ class FaceTrackerGUI(QWidget):
         c_layout.setSpacing(14)
         c_layout.setAlignment(Qt.AlignTop)  # 위에서부터 자연스럽게 정렬 (아래 여백 허용)
         
-        # 2-1. 모션 및 감도 컨트롤 카드
+        # 2-1. 시작 및 시스템 자동 실행 설정 카드 (최상단 배치!)
+        startup_card = QFrame()
+        startup_card.setProperty("class", "DashboardCard")
+        startup_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        sc_layout = QVBoxLayout(startup_card)
+        sc_layout.setContentsMargins(18, 16, 18, 16)
+        sc_layout.setSpacing(14)
+
+        sc_title = QLabel("🚀 시작 및 자동 실행 설정 (Startup)")
+        sc_title.setStyleSheet("font-size: 14px; font-weight: 800; color: #38BDF8; letter-spacing: 0.5px;")
+        sc_layout.addWidget(sc_title)
+
+        # 1) 윈도우 시작 시 실행하기 체크 버튼
+        self.auto_start_win_chk = QCheckBox("🪟  윈도우 시작 시 실행하기")
+        self.auto_start_win_chk.setCursor(Qt.PointingHandCursor)
+        self.auto_start_win_chk.setStyleSheet("""
+            QCheckBox {
+                color: #F1F5F9;
+                font-size: 13px;
+                font-weight: 700;
+                spacing: 8px;
+            }
+            QCheckBox:hover {
+                color: #38BDF8;
+            }
+        """)
+        reg_active = is_auto_start_windows_registered()
+        cfg_active = self.config.get("auto_start_windows", False)
+        self.auto_start_win_chk.setChecked(reg_active or cfg_active)
+        self.auto_start_win_chk.toggled.connect(self._on_auto_start_win_toggled)
+        sc_layout.addWidget(self.auto_start_win_chk)
+
+        # 2) 앱 실행 시 클릭바 실행 체크박스
+        self.settings_click_bar_chk = QCheckBox("🖱️  앱 실행 시 클릭바 실행")
+        self.settings_click_bar_chk.setCursor(Qt.PointingHandCursor)
+        self.settings_click_bar_chk.setStyleSheet("""
+            QCheckBox {
+                color: #F1F5F9;
+                font-size: 13px;
+                font-weight: 700;
+                spacing: 8px;
+            }
+            QCheckBox:hover {
+                color: #38BDF8;
+            }
+        """)
+        self.settings_click_bar_chk.setChecked(self.config.get("enable_click_bar", False))
+        self.settings_click_bar_chk.toggled.connect(self._on_settings_click_bar_toggled)
+        sc_layout.addWidget(self.settings_click_bar_chk)
+
+        c_layout.addWidget(startup_card)
+
+        # 2-2. 모션 및 감도 컨트롤 카드
         motion_card = QFrame()
         motion_card.setProperty("class", "DashboardCard")
         motion_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
@@ -871,7 +978,7 @@ class FaceTrackerGUI(QWidget):
         mc_layout.addLayout(grid)
         c_layout.addWidget(motion_card)
         
-        # 2-2. 단축키 설정 카드
+        # 2-3. 단축키 설정 카드
         hk_card = QFrame()
         hk_card.setProperty("class", "DashboardCard")
         hk_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
@@ -898,7 +1005,7 @@ class FaceTrackerGUI(QWidget):
         hc_layout.addLayout(hk_row)
         c_layout.addWidget(hk_card)
         
-        # 2-3. 프로필 저장 및 관리 카드 (단축키 아래 신규 추가!)
+        # 2-4. 프로필 저장 및 관리 카드
         prof_card = QFrame()
         prof_card.setProperty("class", "DashboardCard")
         prof_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
@@ -1241,25 +1348,19 @@ class FaceTrackerGUI(QWidget):
             return
         cid, cname = self.camera_device_list[combo_idx]
         if cid != self.config.get("camera_id", 0):
-            print(f"[카메라 전환] 장치 선택: {cname} (ID: {cid})")
+            print(f"[카메라 전환] 장치 선택: {cname} (DSHOW ID: {cid})")
             self.config["camera_id"] = cid
             config.save_config(self.config)
             self.cam_name_lbl.setText(f"Device: {cname}")
+            
+            # 추적 기능이 켜진 상태(START TRACKING)에서 카메라를 변경하더라도
+            # 추적 플래그(is_tracking)는 끄지 않고 그대로 유지!
+            # 새 카메라 영상에서 얼굴을 즉시 새로 잡도록 트래킹 내부 좌표만 안전하게 리셋.
+            if self.tracker:
+                self.tracker.reset_tracking_state()
             self._restart_camera()
 
 
-
-    def _on_auto_exp_toggled(self, checked):
-        self.config["auto_exposure"] = checked
-        config.save_config(self.config)
-        if self.tracker:
-            self.tracker.set_auto_exposure(checked)
-
-    def _on_lock_fps_toggled(self, checked):
-        self.config["lock_fps_low_light"] = checked
-        config.save_config(self.config)
-        if self.tracker:
-            self.tracker.set_auto_exposure(self.config.get("auto_exposure", True) and not checked)
 
     def _open_cam_adv_settings(self):
         if self.tracker:
@@ -1293,6 +1394,16 @@ class FaceTrackerGUI(QWidget):
             self.tracker.yunet_filter.config = self.config
             self.tracker.yunet_filter.reset()
             self.tracker.yunet_filter._build_accel_array()
+
+    def _on_auto_start_win_toggled(self, checked):
+        """윈도우 시작 시 자동 실행 토글 및 레지스트리 동기화"""
+        self.config["auto_start_windows"] = checked
+        config.save_config(self.config)
+        success = set_auto_start_windows(checked)
+        if success:
+            print(f"[FaceTracker] 윈도우 시작 시 실행 설정이 {'등록' if checked else '해제'}되었습니다.")
+        else:
+            print(f"[FaceTracker] 윈도우 시작 시 실행 설정 변경 실패")
 
     def _restart_camera(self):
         if self.tracker:
@@ -1362,25 +1473,59 @@ class FaceTrackerGUI(QWidget):
             print("[FaceTracker] 머무름 클릭 바(Click Bar)가 정상 종료되었습니다.")
             self.click_bar_process = None
 
+    def _on_settings_click_bar_toggled(self, checked):
+        """Settings 페이지의 앱 실행 시 클릭바 실행 체크박스 핸들러"""
+        self._on_click_bar_toggled(checked)
+
     def _on_click_bar_toggled(self, checked):
         self.config["enable_click_bar"] = checked
         config.save_config(self.config)
+
+        # Home 탭과 Settings 탭 체크박스 상태 양방향 실시간 동기화
+        if hasattr(self, 'click_bar_chk') and self.click_bar_chk.isChecked() != checked:
+            self.click_bar_chk.blockSignals(True)
+            self.click_bar_chk.setChecked(checked)
+            self.click_bar_chk.blockSignals(False)
+
+        if hasattr(self, 'settings_click_bar_chk') and self.settings_click_bar_chk.isChecked() != checked:
+            self.settings_click_bar_chk.blockSignals(True)
+            self.settings_click_bar_chk.setChecked(checked)
+            self.settings_click_bar_chk.blockSignals(False)
+
         if checked:
             self._launch_click_bar()
         else:
             self._terminate_click_bar()
 
     def _check_click_bar_status(self):
+        # 1. 서브프로세스 종료 감지
         if hasattr(self, 'click_bar_process') and self.click_bar_process is not None:
             if self.click_bar_process.poll() is not None:
-                # 프로세스가 외부에서 종료됨
+                # 프로세스가 외부(EXIT 버튼 등)에서 종료됨
                 self.click_bar_process = None
                 if hasattr(self, 'click_bar_chk') and self.click_bar_chk.isChecked():
                     self.click_bar_chk.blockSignals(True)
                     self.click_bar_chk.setChecked(False)
                     self.click_bar_chk.blockSignals(False)
-                    self.config["enable_click_bar"] = False
-                    config.save_config(self.config)
+                if hasattr(self, 'settings_click_bar_chk') and self.settings_click_bar_chk.isChecked():
+                    self.settings_click_bar_chk.blockSignals(True)
+                    self.settings_click_bar_chk.setChecked(False)
+                    self.settings_click_bar_chk.blockSignals(False)
+                self.config["enable_click_bar"] = False
+                config.save_config(self.config)
+                print("[FaceTracker] 클릭 바(Click Bar)가 닫혀 체크박스를 해제했습니다.")
+        # 2. 체크박스가 켜져 있는데 프로세스가 존재하지 않는 비정상 상태 복구
+        elif hasattr(self, 'click_bar_chk') and self.click_bar_chk.isChecked():
+            # config에 enable_click_bar가 꺼졌거나 프로세스가 없는 경우 체크 해제
+            self.click_bar_chk.blockSignals(True)
+            self.click_bar_chk.setChecked(False)
+            self.click_bar_chk.blockSignals(False)
+            if hasattr(self, 'settings_click_bar_chk') and self.settings_click_bar_chk.isChecked():
+                self.settings_click_bar_chk.blockSignals(True)
+                self.settings_click_bar_chk.setChecked(False)
+                self.settings_click_bar_chk.blockSignals(False)
+            self.config["enable_click_bar"] = False
+            config.save_config(self.config)
 
     def closeEvent(self, event):
         """창 종료 시 웹캠 장치 점유를 완전히 해제하고 백그라운드 스레드를 안전하게 종료합니다."""

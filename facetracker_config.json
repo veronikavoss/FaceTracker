@@ -9,6 +9,7 @@
     "camera_width": 640,
     "camera_height": 480,
     "enable_click_bar": false,
+    "auto_start_windows": true,
     "current_profile": "my profile",
     "profiles": {
         "기본": {
@@ -24,7 +25,7 @@
         "my profile": {
             "sensitivity_x": 27,
             "sensitivity_y": 27,
-            "motion_threshold": 2,
+            "motion_threshold": 3,
             "smoothing": 3,
             "acceleration": 5,
             "correction_interval": 5,

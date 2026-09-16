@@ -1,12 +1,12 @@
 {
   "active": true,
   "current_mode": "LEFT",
-  "dwell_time": 0.3,
-  "dwell_radius": 5,
+  "dwell_time": 0.2,
+  "dwell_radius": 20,
   "auto_revert": true,
-  "sound_enabled": true,
-  "visual_indicator": true,
+  "sound_enabled": false,
+  "visual_indicator": false,
   "dwell_on_bar": true,
-  "pos_x": 1037,
-  "pos_y": 1302
+  "pos_x": 1149,
+  "pos_y": 0
 }

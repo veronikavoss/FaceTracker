@@ -30,6 +30,7 @@ def run_build():
         "--windows-console-mode=disable",
         "--output-dir=dist",
         "--output-filename=FaceTracker.exe",
+        "--windows-icon-from-ico=facetracker.ico",
         "--assume-yes-for-downloads",
         "--jobs=1",
         "--low-memory",
@@ -78,6 +79,17 @@ def run_build():
     if os.path.exists(cb_py_src):
         shutil.copy2(cb_py_src, target_dist)
         print(f"  -> 클릭바 스크립트 동봉 완료: {cb_py_src}")
+
+    for ico in ["facetracker.ico", "clickbar.ico"]:
+        ico_src = os.path.join(base_dir, ico)
+        if os.path.exists(ico_src):
+            shutil.copy2(ico_src, target_dist)
+            print(f"  -> 아이콘 파일 동봉 완료: {ico}")
+
+    click_wav_src = os.path.join(base_dir, "click.wav")
+    if os.path.exists(click_wav_src):
+        shutil.copy2(click_wav_src, target_dist)
+        print(f"  -> 클릭 사운드 파일 동봉 완료: {click_wav_src}")
 
     final_dist = os.path.join(dist_dir, "FaceTracker")
     if target_dist != final_dist:

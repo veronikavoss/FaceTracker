@@ -311,28 +311,35 @@ class FaceTracker(threading.Thread):
                     self._restart_requested = False
                     self.last_heartbeat = time.time()
                     print("[트래커] 카메라 설정 변경 요청 수신 -> 스레드 안전 재연결 시작...")
+                    
+                    # 새 카메라의 프레임 해상도 및 영상에 맞춰 얼굴을 즉시 새로 잡도록 트래킹 좌표 상태 리셋
+                    # (self.tracking_enabled 플래그는 그대로 유지되므로 추적 켜짐 상태가 끊기지 않고 연속 유지!)
+                    self.reset_tracking_state()
+
                     with self.camera_lock:
                         if self.cap is not None:
                             try:
                                 if self.cap.isOpened():
                                     self.cap.release()
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                print(f"[트래커] 이전 카메라 릴리즈 예외: {e}")
                             self.cap = None
-                        time.sleep(0.1)
+                        time.sleep(0.2)  # DirectShow OS 드라이버 및 필터 그래프 완전 해제 대기
                         self._open_camera()
                     continue
 
                 # 1. 카메라 장치 열림 확인 및 복구
-                with self.camera_lock:
+                if self.cap is None or not self.cap.isOpened():
+                    print("[트래커 복구] 카메라가 닫혀 있어 재연결을 시도합니다...")
+                    with self.camera_lock:
+                        self._open_camera()
                     if self.cap is None or not self.cap.isOpened():
-                        print("[트래커 복구] 카메라가 닫혀 있어 재연결을 시도합니다...")
-                        if not self._open_camera():
-                            time.sleep(0.5)
-                            continue
+                        time.sleep(0.3)
+                        continue
 
-                    # 2. 프레임 캡처 및 연속 실패 감시
-                    ret, frame = self.cap.read()
+                # 2. 프레임 캡처 및 연속 실패 감시
+                with self.camera_lock:
+                    ret, frame = self.cap.read() if self.cap else (False, None)
                     
                 if not ret or frame is None:
                     self.consecutive_fails += 1
