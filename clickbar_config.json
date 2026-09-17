@@ -1,5 +1,5 @@
 {
-  "active": false,
+  "active": true,
   "current_mode": "LEFT",
   "dwell_time": 0.2,
   "dwell_radius": 20,
