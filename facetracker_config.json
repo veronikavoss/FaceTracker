@@ -9,7 +9,7 @@
     "camera_width": 640,
     "camera_height": 480,
     "enable_click_bar": true,
-    "auto_start_windows": true,
+    "auto_start_windows": false,
     "current_profile": "my profile",
     "profiles": {
         "기본": {

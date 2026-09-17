@@ -1462,44 +1462,50 @@ class FaceTrackerGUI(QWidget):
             return  # 이미 실행 중
         
         base_dir = config.get_base_dir()
-        exe_path = os.path.join(base_dir, "ClickBar.exe")
         py_path = os.path.join(base_dir, "click_bar.py")
-        
+        if not os.path.exists(py_path):
+            parent_dir = os.path.dirname(base_dir)
+            alt_py = os.path.join(parent_dir, "click_bar.py")
+            if os.path.exists(alt_py):
+                py_path = alt_py
+                base_dir = parent_dir
+
         try:
-            if os.path.exists(exe_path):
-                self.click_bar_process = subprocess.Popen([exe_path])
-                print(f"[FaceTracker] ClickBar.exe 바이너리 실행 완료: {exe_path}")
-            elif os.path.exists(py_path):
-                exe_name = os.path.basename(sys.executable).lower()
-                if "python" in exe_name:
-                    python_exe = sys.executable
-                    pythonw_cand = os.path.join(os.path.dirname(python_exe), "pythonw.exe")
-                    if os.path.exists(pythonw_cand):
-                        python_exe = pythonw_cand
-                    self.click_bar_process = subprocess.Popen([python_exe, py_path])
+            import shutil
+            python_candidates = [
+                r"D:\Program Files\Python\pythonw.exe",
+                r"D:\Program Files\Python\python.exe",
+                shutil.which("pythonw"),
+                shutil.which("python"),
+            ]
+            if "python" in os.path.basename(sys.executable).lower():
+                pyw_near = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                if os.path.exists(pyw_near):
+                    python_candidates.insert(0, pyw_near)
+                python_candidates.insert(0, sys.executable)
+
+            found_py = None
+            for cand in python_candidates:
+                if cand and os.path.exists(cand):
+                    found_py = cand
+                    break
+
+            flags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+
+            if found_py and os.path.exists(py_path):
+                self.click_bar_process = subprocess.Popen(
+                    [found_py, py_path],
+                    cwd=base_dir,
+                    creationflags=flags
+                )
+                print(f"[FaceTracker] 머무름 클릭 바(Click Bar) 안전 구동 완료! ({found_py})")
+            else:
+                exe_path = os.path.join(base_dir, "ClickBar.exe")
+                if os.path.exists(exe_path):
+                    self.click_bar_process = subprocess.Popen([exe_path], cwd=base_dir)
+                    print(f"[FaceTracker] ClickBar.exe 바이너리 실행 완료: {exe_path}")
                 else:
-                    # 배포된 FaceTracker.exe 환경에서 ClickBar.exe가 아직 없을 때 pythonw 탐색
-                    import shutil
-                    pyw_candidates = [
-                        r"D:\Program Files\Python\pythonw.exe",
-                        r"D:\Program Files\Python\python.exe",
-                        shutil.which("pythonw"),
-                        shutil.which("python"),
-                    ]
-                    found_py = None
-                    for cand in pyw_candidates:
-                        if cand and os.path.exists(cand):
-                            found_py = cand
-                            break
-                    if found_py:
-                        self.click_bar_process = subprocess.Popen([found_py, py_path])
-                    else:
-                        bat_path = os.path.join(base_dir, "run_clickbar.bat")
-                        if os.path.exists(bat_path):
-                            self.click_bar_process = subprocess.Popen(["cmd.exe", "/c", bat_path])
-                        else:
-                            self.click_bar_process = subprocess.Popen(["pythonw", py_path], shell=True)
-                print("[FaceTracker] click_bar.py 파이썬 스크립트 실행 완료!")
+                    self.click_bar_process = subprocess.Popen(["pythonw", "click_bar.py"], cwd=base_dir, shell=True)
         except Exception as e:
             print(f"[FaceTracker] 클릭바 실행 실패: {e}")
 

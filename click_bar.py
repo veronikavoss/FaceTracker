@@ -960,7 +960,6 @@ class ClickBarWindow(QWidget):
             self.cooldown_end_time = time.time() + 0.4
 
         elif key == "EXIT":
-            self._sync_facetracker_config_off()
             self.close()
             app = QApplication.instance()
             if app:
@@ -1307,26 +1306,12 @@ class ClickBarWindow(QWidget):
         self.dwell_anchor_x = gx
         self.dwell_anchor_y = gy
 
-    def _sync_facetracker_config_off(self):
-        """클릭바가 종료될 때 FaceTracker 설정 파일의 enable_click_bar도 False로 안전하게 동기화"""
-        try:
-            cfg_path = os.path.join(get_base_dir(), "facetracker_config.json")
-            if os.path.exists(cfg_path):
-                with open(cfg_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                data["enable_click_bar"] = False
-                with open(cfg_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=4, ensure_ascii=False)
-        except Exception:
-            pass
-
     def closeEvent(self, event):
         # 종료 시 오버레이 및 타이머 해제
         self._release_drag()
         self.dwell_timer.stop()
         if self.overlay:
             self.overlay.close()
-        self._sync_facetracker_config_off()
         event.accept()
         app = QApplication.instance()
         if app:
