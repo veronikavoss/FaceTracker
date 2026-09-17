@@ -1459,25 +1459,26 @@ class FaceTrackerGUI(QWidget):
     # 머무름 클릭 바(Click Bar) 수명주기 관리
     # ========================================================
     def _launch_click_bar(self):
+        # 이미 클릭바 창이 떠 있거나 프로세스가 살아있으면 중복 실행 방지
+        import ctypes
+        user32 = ctypes.windll.user32
+        existing_hwnd = user32.FindWindowW(None, "ClickBar")
+        if not existing_hwnd:
+            existing_hwnd = user32.FindWindowW(None, "Enable Viacam - ClickBar")
+        if existing_hwnd:
+            user32.ShowWindow(existing_hwnd, 9)  # SW_RESTORE
+            user32.SetForegroundWindow(existing_hwnd)
+            return
+
         if self.click_bar_process is not None and self.click_bar_process.poll() is None:
-            return  # 이미 실행 중
+            return  # 이미 프로세스 실행 중
         
         base_dir = config.get_base_dir()
         flags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
 
         try:
-            # 1. 배포 환경 최우선: ClickBar.exe 단독 GUI 바이너리 실행
-            cb_exe = os.path.join(base_dir, "ClickBar.exe")
-            if os.path.exists(cb_exe):
-                self.click_bar_process = subprocess.Popen(
-                    [cb_exe],
-                    cwd=base_dir,
-                    creationflags=flags
-                )
-                print(f"[FaceTracker] ClickBar.exe 바이너리 구동 완료: {cb_exe}")
-                return
-
-            # 2. FaceTracker.exe 자체 인자 호출 (--click-bar)
+            # 1. 배포 환경 최우선: FaceTracker.exe 자체 인자 호출 (--click-bar)
+            #    중계 런처를 거치지 않고 직접 직속 자식 프로세스로 띄워 1:1 프로세스 라이프사이클 제어
             ft_exe = os.path.join(base_dir, "FaceTracker.exe")
             if os.path.exists(ft_exe):
                 self.click_bar_process = subprocess.Popen(
@@ -1485,7 +1486,18 @@ class FaceTrackerGUI(QWidget):
                     cwd=base_dir,
                     creationflags=flags
                 )
-                print(f"[FaceTracker] FaceTracker.exe --click-bar 안전 구동 완료: {ft_exe}")
+                print(f"[FaceTracker] FaceTracker.exe --click-bar 직속 구동 완료: {ft_exe}")
+                return
+
+            # 2. ClickBar.exe 단독 바이너리가 있는 경우
+            cb_exe = os.path.join(base_dir, "ClickBar.exe")
+            if os.path.exists(cb_exe):
+                self.click_bar_process = subprocess.Popen(
+                    [cb_exe],
+                    cwd=base_dir,
+                    creationflags=flags
+                )
+                print(f"[FaceTracker] ClickBar.exe 구동 완료: {cb_exe}")
                 return
 
             # 3. 개발 환경 Fallback: Python 인터프리터로 click_bar.py 직접 실행
@@ -1529,17 +1541,36 @@ class FaceTrackerGUI(QWidget):
             print(f"[FaceTracker] 클릭바 실행 실패: {e}")
 
     def _terminate_click_bar(self):
-        if self.click_bar_process is not None and self.click_bar_process.poll() is None:
+        """체크 해제 시 실행 중인 클릭바 프로세스 및 창을 즉시 완벽하게 종료"""
+        # 1. 프로세스 핸들 종료 (Windows taskkill /T /F로 자식 프로세스 트리까지 100% 완전 사살)
+        if self.click_bar_process is not None:
+            pid = self.click_bar_process.pid
             try:
-                self.click_bar_process.terminate()
-                self.click_bar_process.wait(timeout=1.0)
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
+                    timeout=2.0
+                )
             except Exception:
                 try:
                     self.click_bar_process.kill()
                 except Exception:
                     pass
-            print("[FaceTracker] 머무름 클릭 바(Click Bar)가 정상 종료되었습니다.")
             self.click_bar_process = None
+
+        # 2. 잔여 창 및 외부 단독 실행 클릭바 창까지 Win32 WM_CLOSE 메시지로 깨끗이 종료
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            WM_CLOSE = 0x0010
+            for title in ["ClickBar", "Enable Viacam - ClickBar"]:
+                hwnd = user32.FindWindowW(None, title)
+                if hwnd:
+                    user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+        except Exception:
+            pass
+
+        print("[FaceTracker] 머무름 클릭 바(Click Bar)가 완벽하게 종료되었습니다.")
 
     def _on_settings_click_bar_toggled(self, checked):
         """Settings 페이지의 '앱 실행 시 클릭바 실행' 설정 핸들러 (다음 시작 시 적용, 현재 프로세스는 건드리지 않음)"""
@@ -1556,15 +1587,25 @@ class FaceTrackerGUI(QWidget):
 
     def _check_click_bar_status(self):
         """외부에서 클릭바 창이 닫혔을 때 Home 토글만 해제 (Settings 영구 설정값은 보존)"""
-        if hasattr(self, 'click_bar_process') and self.click_bar_process is not None:
-            if self.click_bar_process.poll() is not None:
-                # 프로세스가 외부(EXIT 버튼 등)에서 종료됨
-                self.click_bar_process = None
-                if hasattr(self, 'click_bar_chk') and self.click_bar_chk.isChecked():
-                    self.click_bar_chk.blockSignals(True)
-                    self.click_bar_chk.setChecked(False)
-                    self.click_bar_chk.blockSignals(False)
-                print("[FaceTracker] 외부에서 클릭바가 닫혀 홈 토글을 해제했습니다.")
+        import ctypes
+        user32 = ctypes.windll.user32
+        hwnd = user32.FindWindowW(None, "ClickBar")
+        if not hwnd:
+            hwnd = user32.FindWindowW(None, "Enable Viacam - ClickBar")
+
+        # 프로세스가 종료되었거나 창이 사라진 경우
+        is_running = False
+        if self.click_bar_process is not None and self.click_bar_process.poll() is None:
+            is_running = True
+        elif hwnd:
+            is_running = True
+
+        if not is_running:
+            self.click_bar_process = None
+            if hasattr(self, 'click_bar_chk') and self.click_bar_chk.isChecked():
+                self.click_bar_chk.blockSignals(True)
+                self.click_bar_chk.setChecked(False)
+                self.click_bar_chk.blockSignals(False)
 
     def closeEvent(self, event):
         """창 종료 시 웹캠 장치 점유를 완전히 해제하고 백그라운드 스레드를 안전하게 종료합니다."""

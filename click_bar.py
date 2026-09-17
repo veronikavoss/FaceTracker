@@ -670,7 +670,7 @@ class ClickBarWindow(QWidget):
         self.cfg = load_config()
 
         # 윈도우 속성 설정 (항상 위, 프레임리스, 작업 표시줄 노출, 포커스 비활성화)
-        self.setWindowTitle("Enable Viacam - ClickBar")
+        self.setWindowTitle("ClickBar")
         self.setWindowFlags(
             Qt.Window |
             Qt.FramelessWindowHint |
@@ -1323,7 +1323,24 @@ class ClickBarWindow(QWidget):
 # ========================================================
 # 5. 진입점
 # ========================================================
+# 전역 Mutex 핸들 유지용 (가비지 컬렉션 방지)
+_clickbar_mutex = None
+
 def main():
+    global _clickbar_mutex
+    # 1. 단일 인스턴스 보장 (Single Instance Guard): 이미 실행 중이면 기존 창 활성화 후 즉시 종료
+    ERROR_ALREADY_EXISTS = 183
+    _clickbar_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\EnableViaCam_ClickBar_SingleInstance_Mutex")
+    if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+        # 이미 실행 중인 클릭바 창이 있으면 최상위로 띄우고 종료
+        hwnd = ctypes.windll.user32.FindWindowW(None, "ClickBar")
+        if not hwnd:
+            hwnd = ctypes.windll.user32.FindWindowW(None, "Enable Viacam - ClickBar")
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+        sys.exit(0)
+
     try:
         # Windows 작업 표시줄에서 독립된 앱 아이콘으로 분리 표시되도록 AppUserModelID 등록
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("EnableViaCam.ClickBar")
@@ -1331,7 +1348,7 @@ def main():
         pass
 
     app = QApplication(sys.argv)
-    app.setApplicationName("Enable Viacam - ClickBar")
+    app.setApplicationName("ClickBar")
     ico_path = os.path.join(get_base_dir(), "clickbar.ico")
     if os.path.exists(ico_path):
         app.setWindowIcon(QIcon(ico_path))

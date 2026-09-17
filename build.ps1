@@ -45,7 +45,7 @@ $nuitkaArgs = @(
     "--windows-icon-from-ico=facetracker.ico",
     "--assume-yes-for-downloads",
     "--jobs=2",
-    "--nofollow-import-to=tkinter,unittest,pytest,pydoc,sqlite3,IPython,jupyter,matplotlib,scipy,mediapipe",
+    "--nofollow-import-to=tkinter,unittest,pytest,pydoc,sqlite3,IPython,jupyter,matplotlib,scipy,mediapipe,psutil",
     "main.py"
 )
 

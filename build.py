@@ -51,7 +51,7 @@ def run_build():
         "--assume-yes-for-downloads",
         "--jobs=2",
         "--low-memory",
-        "--nofollow-import-to=tkinter,unittest,pytest,pydoc,sqlite3,IPython,jupyter,matplotlib,scipy,mediapipe",
+        "--nofollow-import-to=tkinter,unittest,pytest,pydoc,sqlite3,IPython,jupyter,matplotlib,scipy,mediapipe,psutil",
         "main.py"
     ]
 

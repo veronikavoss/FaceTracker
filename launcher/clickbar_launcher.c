@@ -17,6 +17,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     si.wShowWindow = SW_HIDE;
     ZeroMemory(&pi, sizeof(pi));
 
+    // 0. 단일 인스턴스 가드: 이미 ClickBar 창이 떠 있으면 중복 실행하지 않고 기존 창 활성화 후 즉시 종료
+    HWND existingWnd = FindWindowW(NULL, L"ClickBar");
+    if (!existingWnd) existingWnd = FindWindowW(NULL, L"Enable Viacam - ClickBar");
+    if (existingWnd) {
+        ShowWindow(existingWnd, SW_RESTORE);
+        SetForegroundWindow(existingWnd);
+        return 0;
+    }
+
     int launched = 0;
     wchar_t cmdLine[MAX_PATH * 3];
 
