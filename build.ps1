@@ -113,12 +113,6 @@ if (Test-Path $targetDist) {
         Remove-Item -Recurse -Force $cbDist -ErrorAction SilentlyContinue
     }
 
-    $cbScriptFile = Join-Path $scriptDir "click_bar.py"
-    if (Test-Path $cbScriptFile) {
-        Copy-Item -Path $cbScriptFile -Destination $targetDist -Force
-        Write-Host "  -> Bundled ClickBar script: $cbScriptFile" -ForegroundColor Gray
-    }
-
     $finalDist = Join-Path $distBase "FaceTracker"
     if ($targetDist -ne $finalDist) {
         Rename-Item -Path $targetDist -NewName "FaceTracker" -Force -ErrorAction SilentlyContinue

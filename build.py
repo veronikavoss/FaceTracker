@@ -115,17 +115,6 @@ def run_build():
     if os.path.exists(cb_cfg_src):
         shutil.copy2(cb_cfg_src, target_dist)
         print(f"  -> 클릭바 설정 파일 동봉 완료: {cb_cfg_src}")
-
-    cb_py_src = os.path.join(base_dir, "click_bar.py")
-    if os.path.exists(cb_py_src):
-        shutil.copy2(cb_py_src, target_dist)
-        print(f"  -> 클릭바 스크립트 동봉 완료: {cb_py_src}")
-
-    bat_src = os.path.join(base_dir, "run_clickbar.bat")
-    if os.path.exists(bat_src):
-        shutil.copy2(bat_src, target_dist)
-        print(f"  -> 클릭바 보조 배치파일 동봉 완료: {bat_src}")
-
     for ico in ["facetracker.ico", "clickbar.ico"]:
         ico_src = os.path.join(base_dir, ico)
         if os.path.exists(ico_src):
