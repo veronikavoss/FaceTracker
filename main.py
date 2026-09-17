@@ -213,4 +213,9 @@ def main():
     sys.exit(app.exec())
 
 if __name__ == "__main__":
-    main()
+    exe_name = os.path.basename(sys.argv[0]).lower()
+    if "clickbar" in exe_name or "--click-bar" in sys.argv:
+        import click_bar
+        click_bar.main()
+    else:
+        main()

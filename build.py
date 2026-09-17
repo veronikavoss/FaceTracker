@@ -86,7 +86,7 @@ def run_build():
     cb_out = os.path.join(target_dist, "ClickBar.exe")
 
     if zig and os.path.exists(c_src):
-        cmd_cb = [zig, "cc", "-target", "x86_64-windows-gnu", c_src, rc_src, "-o", cb_out, "-lshlwapi", "-mwindows"]
+        cmd_cb = [zig, "cc", "-target", "x86_64-windows-gnu", c_src, rc_src, "-o", cb_out, "-lshlwapi", "-Wl,--subsystem,windows"]
         ret_cb = subprocess.run(cmd_cb, cwd=base_dir, capture_output=True)
         cb_pdb = os.path.join(target_dist, "ClickBar.pdb")
         if os.path.exists(cb_pdb):
@@ -101,8 +101,8 @@ def run_build():
     else:
         print("  -> 컴파일러 누락으로 ClickBar 바이너리 생성을 건너뜁니다.")
 
-    # 5. 모델, 사운드, 설정 파일 및 click_bar.py 동봉
-    print("[5/5] 모델, 사운드, 설정 파일 및 머무름 클릭바 동봉 중...")
+    # 5. 모델, 사운드, 설정 파일 동봉 (click_bar.py는 FaceTracker.exe에 컴파일 내장되므로 제외)
+    print("[5/5] 모델, 사운드 및 환경설정 파일 동봉 중...")
     model_src = os.path.join(base_dir, "face_detection_yunet_2023mar.onnx")
     if os.path.exists(model_src):
         shutil.copy2(model_src, target_dist)
@@ -117,11 +117,6 @@ def run_build():
     if os.path.exists(cb_cfg_src):
         shutil.copy2(cb_cfg_src, target_dist)
         print(f"  -> 클릭바 설정 파일 동봉 완료: {cb_cfg_src}")
-
-    cb_py_src = os.path.join(base_dir, "click_bar.py")
-    if os.path.exists(cb_py_src):
-        shutil.copy2(cb_py_src, target_dist)
-        print(f"  -> 머무름 클릭 바 스크립트 동봉 완료: {cb_py_src}")
 
     for ico in ["facetracker.ico", "clickbar.ico"]:
         ico_src = os.path.join(base_dir, ico)

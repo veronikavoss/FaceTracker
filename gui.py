@@ -444,6 +444,7 @@ class FaceTrackerGUI(QWidget):
         ico_path = os.path.join(config.get_base_dir(), "facetracker.ico")
         if os.path.exists(ico_path):
             self.setWindowIcon(QIcon(ico_path))
+        self.setWindowTitle("Face Tracker")
         
         # 카메라 하드웨어 이름 매핑 리스트: [(id, name), ...]
         self.camera_device_list = self._detect_camera_names()
@@ -1462,15 +1463,40 @@ class FaceTrackerGUI(QWidget):
             return  # 이미 실행 중
         
         base_dir = config.get_base_dir()
-        py_path = os.path.join(base_dir, "click_bar.py")
-        if not os.path.exists(py_path):
-            parent_dir = os.path.dirname(base_dir)
-            alt_py = os.path.join(parent_dir, "click_bar.py")
-            if os.path.exists(alt_py):
-                py_path = alt_py
-                base_dir = parent_dir
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
 
         try:
+            # 1. 배포 환경 최우선: ClickBar.exe 단독 GUI 바이너리 실행
+            cb_exe = os.path.join(base_dir, "ClickBar.exe")
+            if os.path.exists(cb_exe):
+                self.click_bar_process = subprocess.Popen(
+                    [cb_exe],
+                    cwd=base_dir,
+                    creationflags=flags
+                )
+                print(f"[FaceTracker] ClickBar.exe 바이너리 구동 완료: {cb_exe}")
+                return
+
+            # 2. FaceTracker.exe 자체 인자 호출 (--click-bar)
+            ft_exe = os.path.join(base_dir, "FaceTracker.exe")
+            if os.path.exists(ft_exe):
+                self.click_bar_process = subprocess.Popen(
+                    [ft_exe, "--click-bar"],
+                    cwd=base_dir,
+                    creationflags=flags
+                )
+                print(f"[FaceTracker] FaceTracker.exe --click-bar 안전 구동 완료: {ft_exe}")
+                return
+
+            # 3. 개발 환경 Fallback: Python 인터프리터로 click_bar.py 직접 실행
+            py_path = os.path.join(base_dir, "click_bar.py")
+            if not os.path.exists(py_path):
+                parent_dir = os.path.dirname(base_dir)
+                alt_py = os.path.join(parent_dir, "click_bar.py")
+                if os.path.exists(alt_py):
+                    py_path = alt_py
+                    base_dir = parent_dir
+
             import shutil
             python_candidates = [
                 r"D:\Program Files\Python\pythonw.exe",
@@ -1490,22 +1516,15 @@ class FaceTrackerGUI(QWidget):
                     found_py = cand
                     break
 
-            flags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
-
             if found_py and os.path.exists(py_path):
                 self.click_bar_process = subprocess.Popen(
                     [found_py, py_path],
                     cwd=base_dir,
                     creationflags=flags
                 )
-                print(f"[FaceTracker] 머무름 클릭 바(Click Bar) 안전 구동 완료! ({found_py})")
+                print(f"[FaceTracker] 머무름 클릭 바(Click Bar) 개발 스크립트 구동 완료! ({found_py})")
             else:
-                exe_path = os.path.join(base_dir, "ClickBar.exe")
-                if os.path.exists(exe_path):
-                    self.click_bar_process = subprocess.Popen([exe_path], cwd=base_dir)
-                    print(f"[FaceTracker] ClickBar.exe 바이너리 실행 완료: {exe_path}")
-                else:
-                    self.click_bar_process = subprocess.Popen(["pythonw", "click_bar.py"], cwd=base_dir, shell=True)
+                self.click_bar_process = subprocess.Popen(["pythonw", "click_bar.py"], cwd=base_dir, shell=True)
         except Exception as e:
             print(f"[FaceTracker] 클릭바 실행 실패: {e}")
 

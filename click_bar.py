@@ -44,6 +44,7 @@ WS_EX_TOPMOST = 0x00000008
 WS_EX_TRANSPARENT = 0x00000020
 WS_EX_LAYERED = 0x00080000
 WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_APPWINDOW = 0x00040000
 
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
@@ -668,11 +669,12 @@ class ClickBarWindow(QWidget):
         super().__init__()
         self.cfg = load_config()
 
-        # 윈도우 속성 설정 (항상 위, 프레임리스, 툴 윈도우, 포커스 비활성화)
+        # 윈도우 속성 설정 (항상 위, 프레임리스, 작업 표시줄 노출, 포커스 비활성화)
+        self.setWindowTitle("Enable Viacam - ClickBar")
         self.setWindowFlags(
+            Qt.Window |
             Qt.FramelessWindowHint |
-            Qt.WindowStaysOnTopHint |
-            Qt.Tool
+            Qt.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -722,10 +724,11 @@ class ClickBarWindow(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # Windows API를 호출하여 이 창이 클릭되어도 포커스를 뺏지 않도록(WS_EX_NOACTIVATE) 및 최상위(TOPMOST) 설정
+        # Windows API를 호출하여 작업 표시줄 등록(WS_EX_APPWINDOW), 포커스 비활성화(WS_EX_NOACTIVATE) 및 최상위(WS_EX_TOPMOST) 보장
         hwnd = int(self.winId())
         style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_TOPMOST)
+        style = (style | WS_EX_APPWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST) & ~WS_EX_TOOLWINDOW
+        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
         self._ensure_topmost()
 
     def _ensure_topmost(self):
@@ -1321,7 +1324,18 @@ class ClickBarWindow(QWidget):
 # 5. 진입점
 # ========================================================
 def main():
+    try:
+        # Windows 작업 표시줄에서 독립된 앱 아이콘으로 분리 표시되도록 AppUserModelID 등록
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("EnableViaCam.ClickBar")
+    except Exception:
+        pass
+
     app = QApplication(sys.argv)
+    app.setApplicationName("Enable Viacam - ClickBar")
+    ico_path = os.path.join(get_base_dir(), "clickbar.ico")
+    if os.path.exists(ico_path):
+        app.setWindowIcon(QIcon(ico_path))
+
     # 설정창 등 어떤 보조 창이 닫혀도 클릭바 프로세스가 종료되지 않도록 보장
     app.setQuitOnLastWindowClosed(False)
     window = ClickBarWindow()

@@ -85,10 +85,14 @@ if (Test-Path $targetDist) {
         Write-Host "  -> Bundled ClickBar config: $cbConfigFile" -ForegroundColor Gray
     }
 
-    $cbScriptFile = Join-Path $scriptDir "click_bar.py"
-    if (Test-Path $cbScriptFile) {
-        Copy-Item -Path $cbScriptFile -Destination $targetDist -Force
-        Write-Host "  -> Bundled ClickBar script: $cbScriptFile" -ForegroundColor Gray
+    # Compile ClickBar.exe GUI launcher with zig
+    $zigPath = Join-Path $env:LOCALAPPDATA "Nuitka\Nuitka\Cache\downloads\pip\private-2b96c5fc\Lib\site-packages\ziglang\zig.exe"
+    $cSrc = Join-Path $scriptDir "launcher\clickbar_launcher.c"
+    $rcSrc = Join-Path $scriptDir "launcher\clickbar.rc"
+    $cbOut = Join-Path $targetDist "ClickBar.exe"
+    if ((Test-Path $zigPath) -and (Test-Path $cSrc)) {
+        & $zigPath cc -target x86_64-windows-gnu $cSrc $rcSrc -o $cbOut -lshlwapi -Wl,--subsystem,windows
+        Write-Host "  -> Compiled standalone GUI launcher: $cbOut" -ForegroundColor Gray
     }
 
     $finalDist = Join-Path $distBase "FaceTracker"
