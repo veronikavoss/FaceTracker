@@ -154,6 +154,17 @@ QWidget {
     font-size: 13px;
 }
 
+/* 툴팁 스타일 (다크 네이비 고대비 + 스카이블루 테두리) */
+QToolTip {
+    background-color: #0F172A;
+    color: #F8FAFC;
+    border: 1.5px solid #38BDF8;
+    border-radius: 6px;
+    padding: 7px 11px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
 /* 메인 윈도우 배경 및 테두리 (깊고 정돈된 딥 네이비 블랙) */
 #MainContainer {
     background-color: #0A0F1A;
@@ -506,6 +517,15 @@ class FaceTrackerGUI(QWidget):
         if self.config.get("enable_click_bar", False):
             QTimer.singleShot(400, lambda: self.click_bar_chk.setChecked(True))
 
+        # 설정에 따라 앱 실행 시 추적기 자동 시작 (추적 시작 버튼 누르지 않아도 바로 추적)
+        if self.config.get("auto_start_tracking", False):
+            def _auto_start_tracking():
+                if self.tracker:
+                    self.tracker.set_tracking(True)
+                    self.sync_tracking_ui(True)
+                    print("[FaceTracker] '앱 실행 시 추적기 실행' 설정에 따라 코끝 추적이 자동 시작되었습니다.")
+            QTimer.singleShot(600, _auto_start_tracking)
+
     def _detect_camera_names(self):
         """QMediaDevices 및 Windows PnP 쿼리로 실제 카메라 하드웨어 이름과 DirectShow 인덱스를 100% 매핑"""
         # 1. DirectShow 백엔드로 실제 캡처 가능한 유효 인덱스 수집 (0~3 범위)
@@ -838,14 +858,14 @@ class FaceTrackerGUI(QWidget):
         sc_layout.setContentsMargins(18, 16, 18, 16)
         sc_layout.setSpacing(14)
 
-        sc_title = QLabel("🚀 시작 및 자동 실행 설정 (Startup)")
+        sc_title = QLabel("시작 및 자동 실행 설정")
         sc_title.setStyleSheet("font-size: 14px; font-weight: 800; color: #38BDF8; letter-spacing: 0.5px;")
         sc_layout.addWidget(sc_title)
 
-        # 1) 윈도우 시작 시 실행하기 체크 버튼
-        self.auto_start_win_chk = QCheckBox("🪟  윈도우 시작 시 실행하기")
-        self.auto_start_win_chk.setCursor(Qt.PointingHandCursor)
-        self.auto_start_win_chk.setStyleSheet("""
+        chk_row = QHBoxLayout()
+        chk_row.setSpacing(24)
+
+        chk_style = """
             QCheckBox {
                 color: #F1F5F9;
                 font-size: 13px;
@@ -855,30 +875,36 @@ class FaceTrackerGUI(QWidget):
             QCheckBox:hover {
                 color: #38BDF8;
             }
-        """)
+        """
+
+        # 1) 윈도우 시작 시 실행하기 (아이콘 제거, 순수 텍스트)
+        self.auto_start_win_chk = QCheckBox("윈도우 시작 시 실행하기")
+        self.auto_start_win_chk.setCursor(Qt.PointingHandCursor)
+        self.auto_start_win_chk.setStyleSheet(chk_style)
         reg_active = is_auto_start_windows_registered()
         cfg_active = self.config.get("auto_start_windows", False)
         self.auto_start_win_chk.setChecked(reg_active or cfg_active)
         self.auto_start_win_chk.toggled.connect(self._on_auto_start_win_toggled)
-        sc_layout.addWidget(self.auto_start_win_chk)
+        chk_row.addWidget(self.auto_start_win_chk)
 
-        # 2) 앱 실행 시 클릭바 실행 체크박스
-        self.settings_click_bar_chk = QCheckBox("🖱️  앱 실행 시 클릭바 실행")
+        # 2) 앱 실행 시 클릭바 실행 (아이콘 제거, 순수 텍스트)
+        self.settings_click_bar_chk = QCheckBox("앱 실행 시 클릭바 실행")
         self.settings_click_bar_chk.setCursor(Qt.PointingHandCursor)
-        self.settings_click_bar_chk.setStyleSheet("""
-            QCheckBox {
-                color: #F1F5F9;
-                font-size: 13px;
-                font-weight: 700;
-                spacing: 8px;
-            }
-            QCheckBox:hover {
-                color: #38BDF8;
-            }
-        """)
+        self.settings_click_bar_chk.setStyleSheet(chk_style)
         self.settings_click_bar_chk.setChecked(self.config.get("enable_click_bar", False))
         self.settings_click_bar_chk.toggled.connect(self._on_settings_click_bar_toggled)
-        sc_layout.addWidget(self.settings_click_bar_chk)
+        chk_row.addWidget(self.settings_click_bar_chk)
+
+        # 3) 앱 실행 시 추적기 실행 (신규 추가, 오른쪽 가로 나란히 배치)
+        self.auto_start_tracking_chk = QCheckBox("앱 실행 시 추적기 실행")
+        self.auto_start_tracking_chk.setCursor(Qt.PointingHandCursor)
+        self.auto_start_tracking_chk.setStyleSheet(chk_style)
+        self.auto_start_tracking_chk.setChecked(self.config.get("auto_start_tracking", False))
+        self.auto_start_tracking_chk.toggled.connect(self._on_auto_start_tracking_toggled)
+        chk_row.addWidget(self.auto_start_tracking_chk)
+
+        chk_row.addStretch(1)
+        sc_layout.addLayout(chk_row)
 
         c_layout.addWidget(startup_card)
 
@@ -898,95 +924,123 @@ class FaceTrackerGUI(QWidget):
         grid.setHorizontalSpacing(18)
         grid.setVerticalSpacing(14)
         
-        def make_field_lbl(text):
+        def make_field_lbl(text, tooltip=None):
             lbl = QLabel(text)
             lbl.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 600;")
+            if tooltip:
+                lbl.setToolTip(tooltip)
+                lbl.setCursor(Qt.PointingHandCursor)
             return lbl
 
+        tip_sx = "가로(좌/우) 머리 움직임에 대한 마우스 포인터 이동 속도와 민감도를 조절합니다.\n값이 클수록 적은 움직임으로도 커서가 더 멀리 이동합니다."
+        tip_sy = "세로(상/하) 머리 움직임에 대한 마우스 포인터 이동 속도와 민감도를 조절합니다.\n값이 클수록 적은 고개 움직임으로도 화면 위아래를 빠르게 이동합니다."
+        tip_th = "미세한 머리 떨림이나 호흡으로 인한 불필요한 커서 흔들림을 방지하는 최소 움직임 임계값(Deadzone)입니다.\n이 값 이하의 미세한 움직임은 무시하여 정지 상태를 안정적으로 유지합니다."
+        tip_sm = "마우스 포인터의 이동 궤적을 부드럽게 다듬는 평활화 강도입니다.\n값이 클수록 커서 떨림이 줄어들고 움직임이 부드러워지며, 값이 작을수록 즉각적이고 민첩하게 반응합니다."
+        tip_acc = "머리를 빠르게 움직일 때 마우스 포인터 이동 거리를 추가 증폭하는 가속 기능입니다.\n고개를 크게 돌리지 않아도 화면 구석까지 손쉽게 이동할 수 있습니다."
+        tip_ci = "장시간 사용 시 얼굴 인식 위치의 미세 누적 오차(Drift)를 재정렬하고 보정하는 주기(초 단위)입니다.\n기본값 5초가 가장 안정적입니다."
+        tip_il = "주변 조명 변화, 모니터 화면 빛 반사, 그림자 등으로 인한 급격한 프레임 밝기 왜곡을 감지하여\n오작동을 방지하는 광량 임계값입니다."
+        tip_sp = "재채기나 카메라 순간 노이즈 등으로 인해 마우스 포인터가 갑자기 엉뚱한 위치로\n순간 이동(튐 현상)하는 것을 감지하여 차단하는 최대 이동 제한 픽셀입니다."
+
         # 민감도 X
-        grid.addWidget(make_field_lbl("민감도 X:"), 0, 0)
+        grid.addWidget(make_field_lbl("민감도 X:", tip_sx), 0, 0)
         self.sx_badge = QLabel(f"{self.config.get('sensitivity_x', 27)}")
         self.sx_badge.setStyleSheet("color: #38BDF8; font-size: 14px; font-weight: 800; min-width: 32px;")
+        self.sx_badge.setToolTip(tip_sx)
         grid.addWidget(self.sx_badge, 0, 1)
         self.sx_slider = QSlider(Qt.Horizontal)
         self.sx_slider.setRange(0, 50)
         self.sx_slider.setValue(int(self.config.get("sensitivity_x", 27)))
+        self.sx_slider.setToolTip(tip_sx)
         self.sx_slider.valueChanged.connect(self._on_sx_changed)
         grid.addWidget(self.sx_slider, 0, 2)
         
         # 민감도 Y
-        grid.addWidget(make_field_lbl("민감도 Y:"), 0, 3)
+        grid.addWidget(make_field_lbl("민감도 Y:", tip_sy), 0, 3)
         self.sy_badge = QLabel(f"{self.config.get('sensitivity_y', 27)}")
         self.sy_badge.setStyleSheet("color: #38BDF8; font-size: 14px; font-weight: 800; min-width: 32px;")
+        self.sy_badge.setToolTip(tip_sy)
         grid.addWidget(self.sy_badge, 0, 4)
         self.sy_slider = QSlider(Qt.Horizontal)
         self.sy_slider.setRange(0, 50)
         self.sy_slider.setValue(int(self.config.get("sensitivity_y", 27)))
+        self.sy_slider.setToolTip(tip_sy)
         self.sy_slider.valueChanged.connect(self._on_sy_changed)
         grid.addWidget(self.sy_slider, 0, 5)
         
         # 임계값 (Deadzone)
-        grid.addWidget(make_field_lbl("임계값:"), 1, 0)
+        grid.addWidget(make_field_lbl("임계값:", tip_th), 1, 0)
         self.th_badge = QLabel(f"{self.config.get('motion_threshold', 2)}")
         self.th_badge.setStyleSheet("color: #F1F5F9; font-size: 14px; font-weight: 800; min-width: 32px;")
+        self.th_badge.setToolTip(tip_th)
         grid.addWidget(self.th_badge, 1, 1)
         self.th_slider = QSlider(Qt.Horizontal)
         self.th_slider.setRange(0, 4)
         self.th_slider.setValue(int(self.config.get("motion_threshold", 2)))
+        self.th_slider.setToolTip(tip_th)
         self.th_slider.valueChanged.connect(self._on_th_changed)
         grid.addWidget(self.th_slider, 1, 2)
         
         # 스무딩
-        grid.addWidget(make_field_lbl("스무딩:"), 1, 3)
+        grid.addWidget(make_field_lbl("스무딩:", tip_sm), 1, 3)
         self.sm_badge = QLabel(f"{self.config.get('smoothing', 3)}")
         self.sm_badge.setStyleSheet("color: #34D399; font-size: 14px; font-weight: 800; min-width: 32px;")
+        self.sm_badge.setToolTip(tip_sm)
         grid.addWidget(self.sm_badge, 1, 4)
         self.sm_slider = QSlider(Qt.Horizontal)
         self.sm_slider.setRange(0, 6)
         self.sm_slider.setValue(int(self.config.get("smoothing", 3)))
+        self.sm_slider.setToolTip(tip_sm)
         self.sm_slider.valueChanged.connect(self._on_sm_changed)
         grid.addWidget(self.sm_slider, 1, 5)
         
         # 가속도 (좌측: 0, 1, 2열)
-        grid.addWidget(make_field_lbl("가속도:"), 2, 0)
+        grid.addWidget(make_field_lbl("가속도:", tip_acc), 2, 0)
         self.acc_badge = QLabel(f"{self.config.get('acceleration', 5)}")
         self.acc_badge.setStyleSheet("color: #FBBF24; font-size: 14px; font-weight: 800; min-width: 32px;")
+        self.acc_badge.setToolTip(tip_acc)
         grid.addWidget(self.acc_badge, 2, 1)
         self.acc_slider = QSlider(Qt.Horizontal)
         self.acc_slider.setRange(0, 10)
         self.acc_slider.setValue(int(self.config.get("acceleration", 5)))
+        self.acc_slider.setToolTip(tip_acc)
         self.acc_slider.valueChanged.connect(self._on_accel_changed)
         grid.addWidget(self.acc_slider, 2, 2)
         
         # 보정 주기 (우측: 3, 4, 5열)
-        grid.addWidget(make_field_lbl("보정 주기:"), 2, 3)
+        grid.addWidget(make_field_lbl("보정 주기:", tip_ci), 2, 3)
         self.ci_badge = QLabel(f"{self.config.get('correction_interval', 5)}")
         self.ci_badge.setStyleSheet("color: #A78BFA; font-size: 14px; font-weight: 800; min-width: 32px;")
+        self.ci_badge.setToolTip(tip_ci)
         grid.addWidget(self.ci_badge, 2, 4)
         self.ci_slider = QSlider(Qt.Horizontal)
         self.ci_slider.setRange(1, 20)
         self.ci_slider.setValue(int(self.config.get("correction_interval", 5)))
+        self.ci_slider.setToolTip(tip_ci)
         self.ci_slider.valueChanged.connect(self._on_ci_changed)
         grid.addWidget(self.ci_slider, 2, 5)
         
         # 광량 감지 & 튐 억제
-        grid.addWidget(make_field_lbl("광량 감지:"), 3, 0)
+        grid.addWidget(make_field_lbl("광량 감지:", tip_il), 3, 0)
         self.il_badge = QLabel(f"{float(self.config.get('illumination_threshold', 10.0)):.1f}")
         self.il_badge.setStyleSheet("color: #F1F5F9; font-size: 14px; font-weight: 800; min-width: 42px;")
+        self.il_badge.setToolTip(tip_il)
         grid.addWidget(self.il_badge, 3, 1)
         self.il_slider = QSlider(Qt.Horizontal)
         self.il_slider.setRange(10, 300)
         self.il_slider.setValue(int(float(self.config.get("illumination_threshold", 10.0)) * 10))
+        self.il_slider.setToolTip(tip_il)
         self.il_slider.valueChanged.connect(self._on_il_changed)
         grid.addWidget(self.il_slider, 3, 2)
         
-        grid.addWidget(make_field_lbl("튐 억제:"), 3, 3)
+        grid.addWidget(make_field_lbl("튐 억제:", tip_sp), 3, 3)
         self.sp_badge = QLabel(f"{float(self.config.get('spike_threshold', 15.0)):.1f}px")
         self.sp_badge.setStyleSheet("color: #F1F5F9; font-size: 14px; font-weight: 800; min-width: 48px;")
+        self.sp_badge.setToolTip(tip_sp)
         grid.addWidget(self.sp_badge, 3, 4)
         self.sp_slider = QSlider(Qt.Horizontal)
         self.sp_slider.setRange(50, 500)
         self.sp_slider.setValue(int(float(self.config.get("spike_threshold", 15.0)) * 10))
+        self.sp_slider.setToolTip(tip_sp)
         self.sp_slider.valueChanged.connect(self._on_sp_changed)
         grid.addWidget(self.sp_slider, 3, 5)
         
@@ -1577,6 +1631,12 @@ class FaceTrackerGUI(QWidget):
         self.config["enable_click_bar"] = checked
         config.save_config(self.config)
         print(f"[FaceTracker] 시작 시 클릭바 자동 실행 설정 저장됨: {checked} (현재 실행 상태는 변경되지 않음)")
+
+    def _on_auto_start_tracking_toggled(self, checked):
+        """Settings 페이지의 '앱 실행 시 추적기 실행' 설정 핸들러 (다음 시작 시 적용)"""
+        self.config["auto_start_tracking"] = checked
+        config.save_config(self.config)
+        print(f"[FaceTracker] 시작 시 추적기 자동 실행 설정 저장됨: {checked}")
 
     def _on_click_bar_toggled(self, checked):
         """Home 페이지의 머무름 클릭 바 토글: 현재 클릭바 즉시 켜기/끄기 실시간 제어"""

@@ -33,6 +33,7 @@ DEFAULT_CONFIG = {
     "camera_height": 480,         # 카메라 해상도 세로
     "enable_click_bar": False,    # 머무름 클릭 바 자동 실행 여부
     "auto_start_windows": False,  # 윈도우 부팅 시 자동 시작 여부
+    "auto_start_tracking": False, # 앱 실행 시 코끝 추적 자동 시작 여부
     "current_profile": "기본",
     "profiles": {
         "기본": DEFAULT_PROFILE_DATA.copy()
