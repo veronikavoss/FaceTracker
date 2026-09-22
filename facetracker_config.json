@@ -41,6 +41,6 @@
     "smoothing": 3,
     "acceleration": 5,
     "correction_interval": 5,
-    "illumination_threshold": 10.0,
+    "illumination_threshold": 5.0,
     "spike_threshold": 15.0
 }

@@ -181,7 +181,7 @@ class DwellIndicatorOverlay(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         # Windows API로 마우스 클릭 완전 투과 설정
-        hwnd = int(self.winId())
+        hwnd = self.winId()
         style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
         user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOPMOST)
 
@@ -688,7 +688,7 @@ class ClickBarSetupDialog(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
-        hwnd = int(self.winId())
+        hwnd = self.winId()
         user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002)
         # 설정창 표시 후에도 클릭바가 항상 더 최우선 최상단이 되도록 보장
         if self.parent_window and hasattr(self.parent_window, '_ensure_topmost') and self.parent_window.cfg.get("always_on_top", True):
@@ -803,8 +803,8 @@ class ClickBarWindow(QWidget):
             try:
                 if not self.cfg.get("always_on_top", True):
                     return
-                my_hwnd = int(self.winId()) if self.isVisible() else 0
-                dlg_hwnd = int(self.setup_dialog.winId()) if (self.setup_dialog and self.setup_dialog.isVisible()) else 0
+                my_hwnd = self.winId() if self.isVisible() else 0
+                dlg_hwnd = self.setup_dialog.winId() if (self.setup_dialog and self.setup_dialog.isVisible()) else 0
                 if hwnd and hwnd != my_hwnd and hwnd != dlg_hwnd:
                     self._ensure_topmost()
             except Exception:
@@ -824,7 +824,7 @@ class ClickBarWindow(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         # Windows API를 호출하여 작업 표시줄 노출(WS_EX_APPWINDOW) 및 포커스 비활성화(WS_EX_NOACTIVATE) 적용
-        hwnd = int(self.winId())
+        hwnd = self.winId()
         style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
         style = (style | WS_EX_APPWINDOW | WS_EX_NOACTIVATE) & ~WS_EX_TOOLWINDOW
         if self.cfg.get("always_on_top", True):
@@ -839,11 +839,11 @@ class ClickBarWindow(QWidget):
         """내 창 위에 다른 최상위 창이 올라와 Z-order가 밀렸는지 실시간 검사"""
         if not self.isVisible():
             return False
-        hwnd = int(self.winId())
+        hwnd = self.winId()
         prev = user32.GetWindow(hwnd, GW_HWNDPREV)
         if prev and user32.IsWindowVisible(prev):
-            dlg_hwnd = int(self.setup_dialog.winId()) if (self.setup_dialog and self.setup_dialog.isVisible()) else 0
-            ov_hwnd = int(self.overlay.winId()) if (hasattr(self, 'overlay') and self.overlay and self.overlay.isVisible()) else 0
+            dlg_hwnd = self.setup_dialog.winId() if (self.setup_dialog and self.setup_dialog.isVisible()) else 0
+            ov_hwnd = self.overlay.winId() if (hasattr(self, 'overlay') and self.overlay and self.overlay.isVisible()) else 0
             if prev != dlg_hwnd and prev != ov_hwnd:
                 return True
         return False
@@ -852,7 +852,7 @@ class ClickBarWindow(QWidget):
         """클릭바 및 오버레이가 화면 최상단에 위치하도록 보장 (팟플레이어 등 다른 Topmost 창 경쟁 극복)"""
         if not self.cfg.get("always_on_top", True) or not self.isVisible():
             return
-        hwnd = int(self.winId())
+        hwnd = self.winId()
         flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER
 
         # Windows OS 특성상 이미 Topmost인 창은 단순 SetWindowPos(-1) 호출 시 Z-order 갱신이 무시됨.
@@ -862,7 +862,7 @@ class ClickBarWindow(QWidget):
         user32.BringWindowToTop(hwnd)
 
         if hasattr(self, 'overlay') and self.overlay and self.overlay.isVisible():
-            ov_hwnd = int(self.overlay.winId())
+            ov_hwnd = self.overlay.winId()
             user32.SetWindowPos(ov_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
             user32.SetWindowPos(ov_hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
             user32.BringWindowToTop(ov_hwnd)
@@ -873,7 +873,7 @@ class ClickBarWindow(QWidget):
         enabled=True: WS_EX_APPWINDOW + WS_EX_TOPMOST (작업표시줄 표시 및 최상위 유지)
         enabled=False: WS_EX_TOPMOST 해제 및 일반 창 뒤로 내려갈 수 있도록 HWND_NOTOPMOST 설정
         """
-        hwnd = int(self.winId())
+        hwnd = self.winId()
         cur_pos = self.pos()
 
         # 1. Qt 윈도우 플래그 동기화 (작업표시줄 노출을 위해 Qt.Window 유지)
@@ -1165,7 +1165,7 @@ class ClickBarWindow(QWidget):
         if hasattr(self, 'overlay') and self.overlay:
             self.overlay.hide()
 
-        hwnd = int(self.winId())
+        hwnd = self.winId()
         user32.ReleaseCapture()
         user32.SendMessageW(hwnd, 0x00A1, 2, 0)
 

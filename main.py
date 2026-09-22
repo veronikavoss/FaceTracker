@@ -9,7 +9,7 @@ import traceback
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QImage
-from pynput import keyboard
+from pynput import keyboard  # type: ignore
 import cv2
 
 from tracker import FaceTracker

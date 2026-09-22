@@ -1,5 +1,8 @@
 import os
 import sys
+# OpenBLAS 및 OpenMP 메모리 할당 실패 방지 (Nuitka 모듈 검사 시 크래시 방어)
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
 import shutil
 import subprocess
 import time

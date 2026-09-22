@@ -13,7 +13,7 @@ from PySide6.QtMultimedia import QMediaDevices
 import cv2
 import numpy as np
 import config
-from pynput import keyboard
+from pynput import keyboard  # type: ignore
 
 REG_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 REG_APP_NAME = "EnableViaCam_FaceTracker"
