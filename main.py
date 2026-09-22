@@ -16,6 +16,14 @@ from tracker import FaceTracker
 from gui import FaceTrackerGUI
 import config
 
+# Windows 부팅 시(시작 프로그램) CWD가 C:\Windows\System32로 시작되어
+# 권한 오류나 설정/모델 파일을 찾지 못하고 종료되는 문제를 100% 방지하기 위해
+# 프로세스 시작 즉시 CWD를 실행 파일이 위치한 폴더로 전환합니다.
+try:
+    os.chdir(config.get_base_dir())
+except Exception:
+    pass
+
 def global_exception_handler(exctype, value, tb):
     """콘솔 창이 숨겨진 배포 환경에서 예기치 않은 오류 발생 시 exe 옆 error.log에 기록"""
     base_dir = config.get_base_dir()
@@ -93,7 +101,7 @@ def main():
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h_f, w_f, ch = rgb_frame.shape
             bytes_per_line = ch * w_f
-            q_img = QImage(rgb_frame.data, w_f, h_f, bytes_per_line, QImage.Format_RGB888).copy()
+            q_img = QImage(rgb_frame.data, w_f, h_f, bytes_per_line, QImage.Format.Format_RGB888).copy()
             
             gui.frame_received_signal.emit(q_img, tracking_enabled, nose_x or 0, nose_y or 0, fps, w, h)
         except Exception:
@@ -141,17 +149,24 @@ def main():
     listener.daemon = True
     listener.start()
     
-    # 7. 자가 치유 워치독(Self-Healing Watchdog) 타이머 등록 (1초 주기)
+    # 7. 자가 치유 워치독(Self-Healing Watchdog) 및 메모리 최적화 타이머 등록 (1초 주기)
     # 트래커 스레드가 비정상 사망하거나 카메라가 4초 이상 멈추면 자동으로 재기동하여 절대 멈추지 않음!
     app_start_time = time.time()
     is_recovering = False
+    mem_trim_tick = 0
 
     def watchdog_check():
-        nonlocal tracker, is_recovering
+        nonlocal tracker, is_recovering, mem_trim_tick
         if not tracker or is_recovering:
             return
         
         now = time.time()
+        # 30초마다 Windows 작업 세트(Working Set) 메모리를 트림하여 장시간 실행 시에도 점유율 극소화 유지
+        mem_trim_tick += 1
+        if mem_trim_tick >= 30:
+            mem_trim_tick = 0
+            config.trim_process_memory()
+
         # 앱 실행 초기 6초는 카메라 하드웨어 초기화 및 해상도 협상 시간이므로 워치독 유예
         if now - app_start_time < 6.0:
             return
@@ -164,9 +179,9 @@ def main():
             if is_dead or is_hung:
                 is_recovering = True
                 print(f"[워치독] 카메라 또는 추적 스레드 멈춤 감지 (사망: {is_dead}, 멈춤: {is_hung}). 안전한 자동 복구를 시작합니다...")
+                old_enabled = getattr(tracker, 'tracking_enabled', False)
                 try:
                     old_tracker = tracker
-                    old_enabled = old_tracker.tracking_enabled
                     old_tracker.stop_tracker()
                     if old_tracker.cap and old_tracker.cap.isOpened():
                         old_tracker.cap.release()
@@ -201,6 +216,7 @@ def main():
                 tracker.stop_tracker()
                 if tracker.cap and tracker.cap.isOpened():
                     tracker.cap.release()
+            config.trim_process_memory()
         except Exception:
             pass
 
@@ -209,6 +225,10 @@ def main():
     # 트래커 백그라운드 스레드 시작
     tracker.start_tracker()
     
+    # 9. 초기 구동 직후 메모리 최적화:
+    # 카메라 연결 및 UI 초기 렌더링 완료 후 2.5초 시점에 초기 작업 세트 메모리를 즉시 OS에 반환 (150MB+ -> 수십 MB 절감)
+    QTimer.singleShot(2500, config.trim_process_memory)
+
     # Qt 메인 이벤트 루프 시작
     sys.exit(app.exec())
 

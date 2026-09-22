@@ -1,7 +1,7 @@
 import os
 import sys
 import subprocess
-from PySide6.QtCore import Qt, QPoint, Signal, Slot, QSize, QTimer
+from PySide6.QtCore import Qt, QPoint, Signal, Slot, QSize, QTimer, QEvent
 from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QIcon, QPainter, QBrush, QPen
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -18,35 +18,50 @@ from pynput import keyboard
 REG_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 REG_APP_NAME = "EnableViaCam_FaceTracker"
 
+def is_standalone_exe() -> bool:
+    """현재 프로세스가 Nuitka/PyInstaller 등으로 컴파일된 독립 실행 파일인지 여부"""
+    if getattr(sys, 'frozen', False) or hasattr(sys, '__compiled__') or '__compiled__' in globals():
+        return True
+    exe_name = os.path.basename(sys.executable).lower()
+    return not exe_name.startswith("python")
+
+def get_expected_auto_start_cmd() -> str:
+    """현재 실행 파일 기준 등록되어야 할 올바른 명령줄 반환"""
+    base_dir = config.get_base_dir()
+    if is_standalone_exe():
+        exe_file = os.path.join(base_dir, "FaceTracker.exe")
+        target_exe = exe_file if os.path.exists(exe_file) else os.path.abspath(sys.executable)
+        return f'"{target_exe}"'
+    else:
+        main_py = os.path.abspath(os.path.join(base_dir, "main.py"))
+        py_dir = os.path.dirname(sys.executable)
+        pyw = os.path.join(py_dir, "pythonw.exe")
+        exe_to_use = pyw if os.path.exists(pyw) else sys.executable
+        return f'"{exe_to_use}" "{main_py}"'
+
 def is_auto_start_windows_registered() -> bool:
     """Windows 시작 프로그램 레지스트리에 등록되어 있는지 검사"""
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_KEY, 0, winreg.KEY_READ) as key:
-            winreg.QueryValueEx(key, REG_APP_NAME)
-            return True
+            val, _ = winreg.QueryValueEx(key, REG_APP_NAME)
+            return bool(val)
     except Exception:
         return False
 
 def set_auto_start_windows(enable: bool) -> bool:
-    """Windows 시작 프로그램 레지스트리 등록 또는 삭제"""
+    """Windows 시작 프로그램 레지스트리(HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run) 등록 또는 삭제"""
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
             if enable:
-                base_dir = config.get_base_dir()
-                if getattr(sys, 'frozen', False):
-                    cmd = f'"{sys.executable}"'
-                else:
-                    main_py = os.path.join(base_dir, "main.py")
-                    py_dir = os.path.dirname(sys.executable)
-                    pyw = os.path.join(py_dir, "pythonw.exe")
-                    exe_to_use = pyw if os.path.exists(pyw) else sys.executable
-                    cmd = f'"{exe_to_use}" "{main_py}"'
+                cmd = get_expected_auto_start_cmd()
                 winreg.SetValueEx(key, REG_APP_NAME, 0, winreg.REG_SZ, cmd)
+                print(f"[FaceTracker] 윈도우 시작 프로그램 레지스트리 등록 완료: {cmd}")
             else:
                 try:
                     winreg.DeleteValue(key, REG_APP_NAME)
+                    print("[FaceTracker] 윈도우 시작 프로그램 레지스트리 삭제 완료")
                 except FileNotFoundError:
                     pass
         return True
@@ -127,12 +142,12 @@ class DarkInputDialog(QDialog):
         
         self.cancel_btn = QPushButton("취소")
         self.cancel_btn.setObjectName("CancelBtn")
-        self.cancel_btn.setCursor(Qt.PointingHandCursor)
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_btn.clicked.connect(self.reject)
         
         self.confirm_btn = QPushButton("확인")
         self.confirm_btn.setObjectName("ConfirmBtn")
-        self.confirm_btn.setCursor(Qt.PointingHandCursor)
+        self.confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.confirm_btn.clicked.connect(self.accept)
         
         btn_box.addWidget(self.cancel_btn)
@@ -385,7 +400,7 @@ class CustomTitleBar(QWidget):
     """모던 다크 커스텀 타이틀바 (창 드래그 및 최소화/닫기 버튼 내장)"""
     def __init__(self, parent):
         super().__init__(parent)
-        self.parent = parent
+        self.win = parent
         self.drag_position = QPoint()
         self.setFixedHeight(38)
         
@@ -410,7 +425,7 @@ class CustomTitleBar(QWidget):
             QPushButton { background: transparent; color: #CBD5E1; border: none; font-size: 11px; border-radius: 4px; }
             QPushButton:hover { background: #1E293B; color: #FFFFFF; }
         """)
-        self.min_btn.clicked.connect(self.parent.showMinimized)
+        self.min_btn.clicked.connect(self.win.showMinimized)
         layout.addWidget(self.min_btn)
         
         # 닫기 버튼
@@ -420,17 +435,17 @@ class CustomTitleBar(QWidget):
             QPushButton { background: transparent; color: #CBD5E1; border: none; font-size: 13px; border-radius: 4px; }
             QPushButton:hover { background: #DC2626; color: #FFFFFF; }
         """)
-        self.close_btn.clicked.connect(self.parent.close)
+        self.close_btn.clicked.connect(self.win.close)
         layout.addWidget(self.close_btn)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.drag_position = event.globalPosition().toPoint() - self.parent.frameGeometry().topLeft()
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drag_position = event.globalPosition().toPoint() - self.win.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event):
-        if event.buttons() == Qt.LeftButton and not self.drag_position.isNull():
-            self.parent.move(event.globalPosition().toPoint() - self.drag_position)
+        if event.buttons() == Qt.MouseButton.LeftButton and not self.drag_position.isNull():
+            self.win.move(event.globalPosition().toPoint() - self.drag_position)
             event.accept()
 
 
@@ -445,8 +460,8 @@ class FaceTrackerGUI(QWidget):
         self.tracker = tracker
         
         # 윈도우 기본 설정 (프레임리스 + 둥근 모서리)
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.resize(880, 750)
         self.setMinimumSize(820, 700)
         
@@ -525,6 +540,10 @@ class FaceTrackerGUI(QWidget):
                     self.sync_tracking_ui(True)
                     print("[FaceTracker] '앱 실행 시 추적기 실행' 설정에 따라 코끝 추적이 자동 시작되었습니다.")
             QTimer.singleShot(600, _auto_start_tracking)
+
+        # 설정에 'auto_start_windows'가 켜져 있으면 시작 프로그램 레지스트리 경로가 항상 최신 exe 위치와 일치하도록 보장 동기화
+        if self.config.get("auto_start_windows", False):
+            set_auto_start_windows(True)
 
     def _detect_camera_names(self):
         """QMediaDevices 및 Windows PnP 쿼리로 실제 카메라 하드웨어 이름과 DirectShow 인덱스를 100% 매핑"""
@@ -641,6 +660,7 @@ class FaceTrackerGUI(QWidget):
         self.nav_home.setChecked(index == 0)
         self.nav_settings.setChecked(index == 1)
         self.nav_help.setChecked(index == 2)
+        config.trim_process_memory()
 
     # ========================================================
     # 1. Home Page: 대형 카메라 화면 + 카메라 퀵 제어 + START 버튼
@@ -678,8 +698,8 @@ class FaceTrackerGUI(QWidget):
         self.video_canvas = QLabel()
         self.video_canvas.setFixedSize(480, 330)
         self.video_canvas.setStyleSheet("background-color: #000000; border: 1.5px solid #2B3A54; border-radius: 8px;")
-        self.video_canvas.setAlignment(Qt.AlignCenter)
-        vc_layout.addWidget(self.video_canvas, 0, Qt.AlignCenter)
+        self.video_canvas.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        vc_layout.addWidget(self.video_canvas, 0, Qt.AlignmentFlag.AlignCenter)
         
         # 하단 카메라 메타정보 바 (비디오 화면과 완전히 분리된 전용 독립 정보 바)
         vc_footer_frame = QFrame()
@@ -752,7 +772,7 @@ class FaceTrackerGUI(QWidget):
         # 2행: 카메라 고급 설정 창 열기 버튼 (홈 화면을 심플하게 정돈)
         adv_cam_btn = QPushButton("📷  카메라 고급 설정 창 열기 (DirectShow Property Page)")
         adv_cam_btn.setProperty("class", "SecondaryButton")
-        adv_cam_btn.setCursor(Qt.PointingHandCursor)
+        adv_cam_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         adv_cam_btn.clicked.connect(self._open_cam_adv_settings)
         cc_layout.addWidget(adv_cam_btn)
         
@@ -763,13 +783,13 @@ class FaceTrackerGUI(QWidget):
         btn_card.setStyleSheet("background-color: transparent;")
         bc_layout = QVBoxLayout(btn_card)
         bc_layout.setContentsMargins(0, 2, 0, 0)
-        bc_layout.setAlignment(Qt.AlignCenter)
+        bc_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # 보조 기능: 머무름 클릭 바 토글 체크박스
         aux_box = QHBoxLayout()
-        aux_box.setAlignment(Qt.AlignCenter)
+        aux_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.click_bar_chk = QCheckBox("🖱️  머무름 클릭 바 (Click Bar) 함께 실행")
-        self.click_bar_chk.setCursor(Qt.PointingHandCursor)
+        self.click_bar_chk.setCursor(Qt.CursorShape.PointingHandCursor)
         self.click_bar_chk.setStyleSheet("""
             QCheckBox {
                 color: #38BDF8;
@@ -794,7 +814,7 @@ class FaceTrackerGUI(QWidget):
         self.start_btn = QPushButton("▶   START TRACKING (F12)")
         self.start_btn.setObjectName("StartButton")
         self.start_btn.setCheckable(True)
-        self.start_btn.setCursor(Qt.PointingHandCursor)
+        self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_btn.setFixedSize(480, 52)
         
         # 에메랄드 글로우 드롭 섀도우 효과
@@ -810,7 +830,7 @@ class FaceTrackerGUI(QWidget):
         # 하단 상태 텍스트
         self.status_text = QLabel("상태: 비활성 (F12를 누르거나 위 버튼을 클릭하여 추적 시작)")
         self.status_text.setStyleSheet("color: #94A3B8; font-size: 12px; font-weight: 600; margin-top: 6px;")
-        self.status_text.setAlignment(Qt.AlignCenter)
+        self.status_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bc_layout.addWidget(self.status_text)
         
         layout.addWidget(btn_card)
@@ -832,7 +852,7 @@ class FaceTrackerGUI(QWidget):
         
         reset_btn = QPushButton("↺  기본값 복원")
         reset_btn.setProperty("class", "SecondaryButton")
-        reset_btn.setCursor(Qt.PointingHandCursor)
+        reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         reset_btn.clicked.connect(self._on_reset_defaults)
         
         title_box.addWidget(st_lbl)
@@ -848,12 +868,12 @@ class FaceTrackerGUI(QWidget):
         c_layout = QVBoxLayout(content)
         c_layout.setContentsMargins(0, 0, 8, 0)
         c_layout.setSpacing(14)
-        c_layout.setAlignment(Qt.AlignTop)  # 위에서부터 자연스럽게 정렬 (아래 여백 허용)
+        c_layout.setAlignment(Qt.AlignmentFlag.AlignTop)  # 위에서부터 자연스럽게 정렬 (아래 여백 허용)
         
         # 2-1. 시작 및 시스템 자동 실행 설정 카드 (최상단 배치!)
         startup_card = QFrame()
         startup_card.setProperty("class", "DashboardCard")
-        startup_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        startup_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         sc_layout = QVBoxLayout(startup_card)
         sc_layout.setContentsMargins(18, 16, 18, 16)
         sc_layout.setSpacing(14)
@@ -862,8 +882,9 @@ class FaceTrackerGUI(QWidget):
         sc_title.setStyleSheet("font-size: 14px; font-weight: 800; color: #38BDF8; letter-spacing: 0.5px;")
         sc_layout.addWidget(sc_title)
 
-        chk_row = QHBoxLayout()
-        chk_row.setSpacing(24)
+        chk_grid = QGridLayout()
+        chk_grid.setHorizontalSpacing(24)
+        chk_grid.setVerticalSpacing(12)
 
         chk_style = """
             QCheckBox {
@@ -879,39 +900,46 @@ class FaceTrackerGUI(QWidget):
 
         # 1) 윈도우 시작 시 실행하기 (아이콘 제거, 순수 텍스트)
         self.auto_start_win_chk = QCheckBox("윈도우 시작 시 실행하기")
-        self.auto_start_win_chk.setCursor(Qt.PointingHandCursor)
+        self.auto_start_win_chk.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_start_win_chk.setStyleSheet(chk_style)
         reg_active = is_auto_start_windows_registered()
         cfg_active = self.config.get("auto_start_windows", False)
         self.auto_start_win_chk.setChecked(reg_active or cfg_active)
         self.auto_start_win_chk.toggled.connect(self._on_auto_start_win_toggled)
-        chk_row.addWidget(self.auto_start_win_chk)
+        chk_grid.addWidget(self.auto_start_win_chk, 0, 0)
 
         # 2) 앱 실행 시 클릭바 실행 (아이콘 제거, 순수 텍스트)
         self.settings_click_bar_chk = QCheckBox("앱 실행 시 클릭바 실행")
-        self.settings_click_bar_chk.setCursor(Qt.PointingHandCursor)
+        self.settings_click_bar_chk.setCursor(Qt.CursorShape.PointingHandCursor)
         self.settings_click_bar_chk.setStyleSheet(chk_style)
         self.settings_click_bar_chk.setChecked(self.config.get("enable_click_bar", False))
         self.settings_click_bar_chk.toggled.connect(self._on_settings_click_bar_toggled)
-        chk_row.addWidget(self.settings_click_bar_chk)
+        chk_grid.addWidget(self.settings_click_bar_chk, 0, 1)
 
-        # 3) 앱 실행 시 추적기 실행 (신규 추가, 오른쪽 가로 나란히 배치)
+        # 3) 앱 실행 시 추적기 실행 (오른쪽 가로 나란히 배치)
         self.auto_start_tracking_chk = QCheckBox("앱 실행 시 추적기 실행")
-        self.auto_start_tracking_chk.setCursor(Qt.PointingHandCursor)
+        self.auto_start_tracking_chk.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_start_tracking_chk.setStyleSheet(chk_style)
         self.auto_start_tracking_chk.setChecked(self.config.get("auto_start_tracking", False))
         self.auto_start_tracking_chk.toggled.connect(self._on_auto_start_tracking_toggled)
-        chk_row.addWidget(self.auto_start_tracking_chk)
+        chk_grid.addWidget(self.auto_start_tracking_chk, 1, 0)
 
-        chk_row.addStretch(1)
-        sc_layout.addLayout(chk_row)
+        # 4) 페이스 트래커 닫을 때 클릭바도 같이 닫기
+        self.close_clickbar_on_exit_chk = QCheckBox("페이스 트래커 닫을 때 클릭바도 같이 닫기")
+        self.close_clickbar_on_exit_chk.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.close_clickbar_on_exit_chk.setStyleSheet(chk_style)
+        self.close_clickbar_on_exit_chk.setChecked(self.config.get("close_clickbar_on_exit", True))
+        self.close_clickbar_on_exit_chk.toggled.connect(self._on_close_clickbar_on_exit_toggled)
+        chk_grid.addWidget(self.close_clickbar_on_exit_chk, 1, 1)
+
+        sc_layout.addLayout(chk_grid)
 
         c_layout.addWidget(startup_card)
 
         # 2-2. 모션 및 감도 컨트롤 카드
         motion_card = QFrame()
         motion_card.setProperty("class", "DashboardCard")
-        motion_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        motion_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         mc_layout = QVBoxLayout(motion_card)
         mc_layout.setContentsMargins(18, 16, 18, 16)
         mc_layout.setSpacing(14)
@@ -929,7 +957,7 @@ class FaceTrackerGUI(QWidget):
             lbl.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 600;")
             if tooltip:
                 lbl.setToolTip(tooltip)
-                lbl.setCursor(Qt.PointingHandCursor)
+                lbl.setCursor(Qt.CursorShape.PointingHandCursor)
             return lbl
 
         tip_sx = "가로(좌/우) 머리 움직임에 대한 마우스 포인터 이동 속도와 민감도를 조절합니다.\n값이 클수록 적은 움직임으로도 커서가 더 멀리 이동합니다."
@@ -947,7 +975,7 @@ class FaceTrackerGUI(QWidget):
         self.sx_badge.setStyleSheet("color: #38BDF8; font-size: 14px; font-weight: 800; min-width: 32px;")
         self.sx_badge.setToolTip(tip_sx)
         grid.addWidget(self.sx_badge, 0, 1)
-        self.sx_slider = QSlider(Qt.Horizontal)
+        self.sx_slider = QSlider(Qt.Orientation.Horizontal)
         self.sx_slider.setRange(0, 50)
         self.sx_slider.setValue(int(self.config.get("sensitivity_x", 27)))
         self.sx_slider.setToolTip(tip_sx)
@@ -960,7 +988,7 @@ class FaceTrackerGUI(QWidget):
         self.sy_badge.setStyleSheet("color: #38BDF8; font-size: 14px; font-weight: 800; min-width: 32px;")
         self.sy_badge.setToolTip(tip_sy)
         grid.addWidget(self.sy_badge, 0, 4)
-        self.sy_slider = QSlider(Qt.Horizontal)
+        self.sy_slider = QSlider(Qt.Orientation.Horizontal)
         self.sy_slider.setRange(0, 50)
         self.sy_slider.setValue(int(self.config.get("sensitivity_y", 27)))
         self.sy_slider.setToolTip(tip_sy)
@@ -973,7 +1001,7 @@ class FaceTrackerGUI(QWidget):
         self.th_badge.setStyleSheet("color: #F1F5F9; font-size: 14px; font-weight: 800; min-width: 32px;")
         self.th_badge.setToolTip(tip_th)
         grid.addWidget(self.th_badge, 1, 1)
-        self.th_slider = QSlider(Qt.Horizontal)
+        self.th_slider = QSlider(Qt.Orientation.Horizontal)
         self.th_slider.setRange(0, 4)
         self.th_slider.setValue(int(self.config.get("motion_threshold", 2)))
         self.th_slider.setToolTip(tip_th)
@@ -986,7 +1014,7 @@ class FaceTrackerGUI(QWidget):
         self.sm_badge.setStyleSheet("color: #34D399; font-size: 14px; font-weight: 800; min-width: 32px;")
         self.sm_badge.setToolTip(tip_sm)
         grid.addWidget(self.sm_badge, 1, 4)
-        self.sm_slider = QSlider(Qt.Horizontal)
+        self.sm_slider = QSlider(Qt.Orientation.Horizontal)
         self.sm_slider.setRange(0, 6)
         self.sm_slider.setValue(int(self.config.get("smoothing", 3)))
         self.sm_slider.setToolTip(tip_sm)
@@ -999,7 +1027,7 @@ class FaceTrackerGUI(QWidget):
         self.acc_badge.setStyleSheet("color: #FBBF24; font-size: 14px; font-weight: 800; min-width: 32px;")
         self.acc_badge.setToolTip(tip_acc)
         grid.addWidget(self.acc_badge, 2, 1)
-        self.acc_slider = QSlider(Qt.Horizontal)
+        self.acc_slider = QSlider(Qt.Orientation.Horizontal)
         self.acc_slider.setRange(0, 10)
         self.acc_slider.setValue(int(self.config.get("acceleration", 5)))
         self.acc_slider.setToolTip(tip_acc)
@@ -1012,7 +1040,7 @@ class FaceTrackerGUI(QWidget):
         self.ci_badge.setStyleSheet("color: #A78BFA; font-size: 14px; font-weight: 800; min-width: 32px;")
         self.ci_badge.setToolTip(tip_ci)
         grid.addWidget(self.ci_badge, 2, 4)
-        self.ci_slider = QSlider(Qt.Horizontal)
+        self.ci_slider = QSlider(Qt.Orientation.Horizontal)
         self.ci_slider.setRange(1, 20)
         self.ci_slider.setValue(int(self.config.get("correction_interval", 5)))
         self.ci_slider.setToolTip(tip_ci)
@@ -1025,7 +1053,7 @@ class FaceTrackerGUI(QWidget):
         self.il_badge.setStyleSheet("color: #F1F5F9; font-size: 14px; font-weight: 800; min-width: 42px;")
         self.il_badge.setToolTip(tip_il)
         grid.addWidget(self.il_badge, 3, 1)
-        self.il_slider = QSlider(Qt.Horizontal)
+        self.il_slider = QSlider(Qt.Orientation.Horizontal)
         self.il_slider.setRange(10, 300)
         self.il_slider.setValue(int(float(self.config.get("illumination_threshold", 10.0)) * 10))
         self.il_slider.setToolTip(tip_il)
@@ -1037,7 +1065,7 @@ class FaceTrackerGUI(QWidget):
         self.sp_badge.setStyleSheet("color: #F1F5F9; font-size: 14px; font-weight: 800; min-width: 48px;")
         self.sp_badge.setToolTip(tip_sp)
         grid.addWidget(self.sp_badge, 3, 4)
-        self.sp_slider = QSlider(Qt.Horizontal)
+        self.sp_slider = QSlider(Qt.Orientation.Horizontal)
         self.sp_slider.setRange(50, 500)
         self.sp_slider.setValue(int(float(self.config.get("spike_threshold", 15.0)) * 10))
         self.sp_slider.setToolTip(tip_sp)
@@ -1050,7 +1078,7 @@ class FaceTrackerGUI(QWidget):
         # 2-3. 단축키 설정 카드
         hk_card = QFrame()
         hk_card.setProperty("class", "DashboardCard")
-        hk_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        hk_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         hc_layout = QVBoxLayout(hk_card)
         hc_layout.setContentsMargins(18, 14, 18, 14)
         hc_layout.setSpacing(10)
@@ -1065,7 +1093,7 @@ class FaceTrackerGUI(QWidget):
         
         self.hotkey_btn = QPushButton("단축키 변경")
         self.hotkey_btn.setProperty("class", "SecondaryButton")
-        self.hotkey_btn.setCursor(Qt.PointingHandCursor)
+        self.hotkey_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.hotkey_btn.clicked.connect(self._start_hotkey_recording)
         
         hk_row.addWidget(self.hk_info_lbl)
@@ -1077,7 +1105,7 @@ class FaceTrackerGUI(QWidget):
         # 2-4. 프로필 저장 및 관리 카드
         prof_card = QFrame()
         prof_card.setProperty("class", "DashboardCard")
-        prof_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        prof_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         pc_layout = QVBoxLayout(prof_card)
         pc_layout.setContentsMargins(18, 16, 18, 16)
         pc_layout.setSpacing(12)
@@ -1104,17 +1132,17 @@ class FaceTrackerGUI(QWidget):
         
         save_new_btn = QPushButton("➕ 새 프로필 저장")
         save_new_btn.setProperty("class", "PrimaryActionBtn")
-        save_new_btn.setCursor(Qt.PointingHandCursor)
+        save_new_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         save_new_btn.clicked.connect(self._on_save_new_profile)
         
         overwrite_btn = QPushButton("💾 현재 프로필 덮어쓰기")
         overwrite_btn.setProperty("class", "SecondaryButton")
-        overwrite_btn.setCursor(Qt.PointingHandCursor)
+        overwrite_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         overwrite_btn.clicked.connect(self._on_overwrite_profile)
         
         delete_btn = QPushButton("🗑️ 삭제")
         delete_btn.setProperty("class", "DangerBtn")
-        delete_btn.setCursor(Qt.PointingHandCursor)
+        delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         delete_btn.clicked.connect(self._on_delete_profile)
         
         p_row2.addWidget(save_new_btn)
@@ -1230,7 +1258,7 @@ class FaceTrackerGUI(QWidget):
         box = QMessageBox(self)
         box.setWindowTitle(title)
         box.setText(text)
-        box.setIcon(QMessageBox.Warning)
+        box.setIcon(QMessageBox.Icon.Warning)
         box.setStyleSheet("""
             QMessageBox { background-color: #182234; border: 1.5px solid #2D3E5B; border-radius: 10px; font-family: 'Pretendard', 'Malgun Gothic', '맑은 고딕', 'Segoe UI', sans-serif; }
             QLabel { color: #FFFFFF; font-size: 14px; font-weight: 600; }
@@ -1243,10 +1271,10 @@ class FaceTrackerGUI(QWidget):
         box = QMessageBox(self)
         box.setWindowTitle(title)
         box.setText(text)
-        box.setIcon(QMessageBox.Question)
-        box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        yes_btn = box.button(QMessageBox.Yes)
-        no_btn = box.button(QMessageBox.No)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        yes_btn = box.button(QMessageBox.StandardButton.Yes)
+        no_btn = box.button(QMessageBox.StandardButton.No)
         if yes_btn:
             yes_btn.setText("예")
         if no_btn:
@@ -1257,11 +1285,11 @@ class FaceTrackerGUI(QWidget):
             QPushButton { background-color: #243247; color: #F8FAFC; font-size: 13px; font-weight: 600; border: 1px solid #3D5174; border-radius: 6px; padding: 7px 20px; min-width: 68px; }
             QPushButton:hover { background-color: #33435C; color: #FFFFFF; border-color: #38BDF8; }
         """)
-        return box.exec() == QMessageBox.Yes
+        return box.exec() == QMessageBox.StandardButton.Yes
 
     def _on_save_new_profile(self):
         dlg = DarkInputDialog(self, "새 프로필 저장", "저장할 프로필 이름을 입력하세요 (최대 25자):")
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             pname = dlg.get_text().strip()
             # 입력값 검증: 빈 값 및 제어문자 방어
             pname = "".join(c for c in pname if c.isprintable()).strip()
@@ -1339,6 +1367,7 @@ class FaceTrackerGUI(QWidget):
                 background-color: #2A1414; color: #EF4444;
                 font-size: 10px; font-weight: bold; padding: 3px 10px; border-radius: 4px;
             """)
+            config.trim_process_memory()
 
     @Slot(QImage, bool, int, int, int, int, int)
     def update_video_frame(self, q_img, tracking_enabled, nose_x, nose_y, fps, w, h):
@@ -1357,7 +1386,7 @@ class FaceTrackerGUI(QWidget):
         self._is_frame_busy = True
         try:
             pixmap = QPixmap.fromImage(q_img)
-            scaled_pix = pixmap.scaled(self.video_canvas.size(), Qt.KeepAspectRatio, Qt.FastTransformation)
+            scaled_pix = pixmap.scaled(self.video_canvas.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
             self.video_canvas.setPixmap(scaled_pix)
             
             self.cam_fps_lbl.setText(f"FPS: {fps} | {w}x{h}")
@@ -1441,14 +1470,14 @@ class FaceTrackerGUI(QWidget):
             self.config[k] = v
         config.save_config(self.config)
         
-        self.sx_slider.setValue(defaults["sensitivity_x"])
-        self.sy_slider.setValue(defaults["sensitivity_y"])
-        self.th_slider.setValue(defaults["motion_threshold"])
-        self.sm_slider.setValue(defaults["smoothing"])
-        self.acc_slider.setValue(defaults["acceleration"])
-        self.ci_slider.setValue(defaults["correction_interval"])
-        self.il_slider.setValue(int(defaults["illumination_threshold"] * 10))
-        self.sp_slider.setValue(int(defaults["spike_threshold"] * 10))
+        self.sx_slider.setValue(int(defaults["sensitivity_x"]))
+        self.sy_slider.setValue(int(defaults["sensitivity_y"]))
+        self.th_slider.setValue(int(defaults["motion_threshold"]))
+        self.sm_slider.setValue(int(defaults["smoothing"]))
+        self.acc_slider.setValue(int(defaults["acceleration"]))
+        self.ci_slider.setValue(int(defaults["correction_interval"]))
+        self.il_slider.setValue(int(float(defaults["illumination_threshold"]) * 10))
+        self.sp_slider.setValue(int(float(defaults["spike_threshold"]) * 10))
         
         self.sx_badge.setText(str(defaults["sensitivity_x"]))
         self.sy_badge.setText(str(defaults["sensitivity_y"]))
@@ -1456,8 +1485,8 @@ class FaceTrackerGUI(QWidget):
         self.sm_badge.setText(str(defaults["smoothing"]))
         self.acc_badge.setText(str(defaults["acceleration"]))
         self.ci_badge.setText(str(defaults["correction_interval"]))
-        self.il_badge.setText(f"{defaults['illumination_threshold']:.1f}")
-        self.sp_badge.setText(f"{defaults['spike_threshold']:.1f}px")
+        self.il_badge.setText(f"{float(defaults['illumination_threshold']):.1f}")
+        self.sp_badge.setText(f"{float(defaults['spike_threshold']):.1f}px")
         
         if hasattr(self.tracker, "yunet_filter"):
             self.tracker.yunet_filter.config = self.config
@@ -1638,6 +1667,12 @@ class FaceTrackerGUI(QWidget):
         config.save_config(self.config)
         print(f"[FaceTracker] 시작 시 추적기 자동 실행 설정 저장됨: {checked}")
 
+    def _on_close_clickbar_on_exit_toggled(self, checked):
+        """Settings 페이지의 '페이스 트래커 닫을 때 클릭바도 같이 닫기' 설정 핸들러"""
+        self.config["close_clickbar_on_exit"] = checked
+        config.save_config(self.config)
+        print(f"[FaceTracker] 페이스 트래커 종료 시 클릭바 함께 닫기 설정 저장됨: {checked}")
+
     def _on_click_bar_toggled(self, checked):
         """Home 페이지의 머무름 클릭 바 토글: 현재 클릭바 즉시 켜기/끄기 실시간 제어"""
         if checked:
@@ -1667,11 +1702,21 @@ class FaceTrackerGUI(QWidget):
                 self.click_bar_chk.setChecked(False)
                 self.click_bar_chk.blockSignals(False)
 
+    def changeEvent(self, event):
+        """창이 최소화될 때 UI 렌더링 캐시 및 비디오 버퍼를 즉시 OS에 반환하여 백그라운드 메모리 극소화"""
+        if event.type() == QEvent.Type.WindowStateChange:
+            if self.isMinimized():
+                config.trim_process_memory()
+        super().changeEvent(event)
+
     def closeEvent(self, event):
         """창 종료 시 웹캠 장치 점유를 완전히 해제하고 백그라운드 스레드를 안전하게 종료합니다."""
         print("[FaceTracker] 애플리케이션 종료 절차 시작...")
-        # 1. 클릭바 서브프로세스 안전 종료
-        self._terminate_click_bar()
+        # 1. 클릭바 서브프로세스 안전 종료 (설정 활성화 시에만 종료)
+        if self.config.get("close_clickbar_on_exit", True):
+            self._terminate_click_bar()
+        else:
+            print("[FaceTracker] '페이스 트래커 닫을 때 클릭바도 같이 닫기' 설정이 꺼져 있어 클릭바를 유지합니다.")
 
         # 2. 단축키 녹음 리스너 정리
         if hasattr(self, 'key_listener') and self.key_listener and self.key_listener.is_alive():
@@ -1690,4 +1735,5 @@ class FaceTrackerGUI(QWidget):
             except Exception as e:
                 print(f"[카메라] 장치 해제 중 오류: {e}")
                 
+        config.trim_process_memory()
         event.accept()

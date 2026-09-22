@@ -5,6 +5,7 @@ import time
 import ctypes
 from ctypes import wintypes
 import threading
+from typing import Any
 
 def play_sound(freq, duration):
     """GUI 스레드 지연을 방지하는 백그라운드 비동기 비프음 재생"""
@@ -26,11 +27,11 @@ def play_click_sound():
     except Exception:
         pass
 
-from PySide6.QtCore import Qt, QPoint, QRect, QTimer, QSize
+from PySide6.QtCore import Qt, QPoint, QRect, QTimer
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QPainterPath, QCursor, QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QPushButton,
-    QLabel, QDialog, QSlider, QCheckBox, QFrame, QMessageBox, QSpacerItem, QSizePolicy
+    QLabel, QDialog, QSlider, QCheckBox, QFrame
 )
 
 # ========================================================
@@ -46,18 +47,71 @@ WS_EX_LAYERED = 0x00080000
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_APPWINDOW = 0x00040000
 
+HWND_TOPMOST = -1
+HWND_NOTOPMOST = -2
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_NOACTIVATE = 0x0010
+SWP_FRAMECHANGED = 0x0020
+SWP_SHOWWINDOW = 0x0040
+SWP_NOOWNERZORDER = 0x0200
+GW_HWNDPREV = 3
+
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
 MOUSEEVENTF_RIGHTDOWN = 0x0008
 MOUSEEVENTF_RIGHTUP = 0x0010
 
+EVENT_SYSTEM_FOREGROUND = 0x0003
+WINEVENT_OUTOFCONTEXT = 0x0000
+
+WINEVENTPROC = ctypes.WINFUNCTYPE(
+    None,
+    wintypes.HANDLE,
+    wintypes.DWORD,
+    wintypes.HWND,
+    wintypes.LONG,
+    wintypes.LONG,
+    wintypes.DWORD,
+    wintypes.DWORD
+)
+
 class POINT(ctypes.Structure):
     _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
 
+kernel32 = ctypes.windll.kernel32
+kernel32.SetProcessWorkingSetSize.argtypes = [wintypes.HANDLE, ctypes.c_size_t, ctypes.c_size_t]
+kernel32.SetProcessWorkingSetSize.restype = wintypes.BOOL
+
+def trim_process_memory():
+    """Windows OS에 사용하지 않는 작업 세트(Working Set) 메모리를 반환하도록 요청하여 메모리 점유율을 1~3MB대로 극소화"""
+    try:
+        import gc
+        gc.collect()
+        h_process = kernel32.GetCurrentProcess()
+        kernel32.SetProcessWorkingSetSize(h_process, ctypes.c_size_t(-1), ctypes.c_size_t(-1))
+    except Exception:
+        pass
+
 def get_base_dir():
-    if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
+    """
+    실행 파일(Nuitka/PyInstaller) 환경과 일반 스크립트 실행 환경을 자동 감지하여 기준 폴더 반환.
+    Nuitka standalone, PyInstaller, 일반 python 실행 모두에서 항상 정확한 실행 폴더 절대 경로를 반환합니다.
+    """
+    if getattr(sys, 'frozen', False) or hasattr(sys, '__compiled__') or '__compiled__' in globals():
+        return os.path.dirname(os.path.abspath(sys.executable))
+    
+    exe_name = os.path.basename(sys.executable).lower()
+    if not exe_name.startswith("python"):
+        return os.path.dirname(os.path.abspath(sys.executable))
+        
     return os.path.dirname(os.path.abspath(__file__))
+
+# CWD가 시스템 폴더(예: C:\Windows\System32)로 시작할 때의 경로/권한 문제를 100% 방지
+try:
+    os.chdir(get_base_dir())
+except Exception:
+    pass
 
 CONFIG_PATH = os.path.join(get_base_dir(), "clickbar_config.json")
 
@@ -70,6 +124,7 @@ DEFAULT_CONFIG = {
     "sound_enabled": True,
     "visual_indicator": True,
     "dwell_on_bar": True,
+    "always_on_top": True,
     "pos_x": 400,
     "pos_y": 30
 }
@@ -108,15 +163,15 @@ class DwellIndicatorOverlay(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowFlags(
-            Qt.FramelessWindowHint |
-            Qt.WindowStaysOnTopHint |
-            Qt.Tool |
-            Qt.WindowTransparentForInput
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool |
+            Qt.WindowType.WindowTransparentForInput
         )
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setAttribute(Qt.WA_QuitOnClose, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         
         self.setFixedSize(40, 40)
         self.progress = 0.0  # 0.0 ~ 1.0
@@ -144,7 +199,7 @@ class DwellIndicatorOverlay(QWidget):
             return
 
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         center_x = self.width() / 2.0
         center_y = self.height() / 2.0
@@ -153,7 +208,7 @@ class DwellIndicatorOverlay(QWidget):
 
         # 1. 배경 가이드 링 (은은한 반투명 다크 링)
         bg_pen = QPen(QColor(15, 23, 42, 160), 3)
-        bg_pen.setCapStyle(Qt.RoundCap)
+        bg_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(bg_pen)
         painter.drawEllipse(rect)
 
@@ -171,7 +226,7 @@ class DwellIndicatorOverlay(QWidget):
 
         # 3. 진행도 게이지 아크 (12시 방향부터 시계방향 회전)
         arc_pen = QPen(arc_color, 4)
-        arc_pen.setCapStyle(Qt.RoundCap)
+        arc_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(arc_pen)
         
         start_angle = 90 * 16
@@ -179,7 +234,7 @@ class DwellIndicatorOverlay(QWidget):
         painter.drawArc(rect, start_angle, span_angle)
 
         # 4. 중심 앵커 점
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(arc_color))
         painter.drawEllipse(QPoint(int(center_x), int(center_y)), 3, 3)
 
@@ -201,20 +256,23 @@ class ClickBarButton(QPushButton):
         self.is_drag_active = False
         self.drag_start_mouse_pos = QPoint()
         self.setFixedSize(38, 38)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setFocusPolicy(Qt.NoFocus)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     def mousePressEvent(self, event):
-        win = self.window()
-        if hasattr(win, 'is_follow_moving') and win.is_follow_moving:
-            win._stop_follow_moving()
+        win: Any = self.window()
+        if getattr(win, 'is_follow_moving', False):
+            stop_fn = getattr(win, '_stop_follow_moving', None)
+            if callable(stop_fn):
+                stop_fn()
             event.accept()
             return
 
-        if self.key == "MOVE" and event.button() == Qt.LeftButton:
+        if self.key == "MOVE" and event.button() == Qt.MouseButton.LeftButton:
             start_pt = event.globalPosition().toPoint()
-            if hasattr(win, '_start_native_drag'):
-                win._start_native_drag()
+            drag_fn = getattr(win, '_start_native_drag', None)
+            if callable(drag_fn):
+                drag_fn()
             # 네이티브 드래그 종료 후, 마우스 이동이 거의 없는 단순 클릭이었으면 토글 클릭 시그널 방출
             end_pt = QCursor.pos()
             if (end_pt - start_pt).manhattanLength() <= 4:
@@ -233,14 +291,14 @@ class ClickBarButton(QPushButton):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         rect = self.rect()
         w = rect.width()
         h = rect.height()
 
         # 1. 버튼 배경 및 테두리 결정
-        border_style = Qt.SolidLine
+        border_style = Qt.PenStyle.SolidLine
         border_width = 1.2
         border_color = QColor(203, 213, 225)
         bg_color = QColor(248, 250, 252)
@@ -261,14 +319,14 @@ class ClickBarButton(QPushButton):
                 bg_color = QColor(138, 226, 244)
                 border_color = QColor(3, 105, 161)
                 border_width = 1.6
-                border_style = Qt.SolidLine
+                border_style = Qt.PenStyle.SolidLine
                 text_color = QColor(15, 23, 42)
             else:
                 # [1회 사용 모드]: 외곽선에 점선(Dashed) 표시! + 연한 파스텔 스카이블루 틴트 배경
                 bg_color = QColor(224, 242, 254)
                 border_color = QColor(2, 132, 199)
                 border_width = 2.0
-                border_style = Qt.DashLine
+                border_style = Qt.PenStyle.DashLine
                 text_color = QColor(3, 105, 161)
         elif self.underMouse():
             bg_color = QColor(241, 245, 249)
@@ -279,15 +337,15 @@ class ClickBarButton(QPushButton):
         if self.key == "DRAG" and self.is_dragging_state:
             bg_color = QColor(254, 215, 170)  # 드래그 중 앰버 하이라이트
             border_color = QColor(234, 88, 12)
-            border_style = Qt.SolidLine
+            border_style = Qt.PenStyle.SolidLine
             border_width = 1.6
 
         # 라운드 박스 렌더링 (1회 사용 시 또렷한 점선 테두리)
-        if border_style == Qt.DashLine:
-            pen = QPen(border_color, border_width, Qt.CustomDashLine)
+        if border_style == Qt.PenStyle.DashLine:
+            pen = QPen(border_color, border_width, Qt.PenStyle.CustomDashLine)
             pen.setDashPattern([3, 2])
         else:
-            pen = QPen(border_color, border_width, Qt.SolidLine)
+            pen = QPen(border_color, border_width, Qt.PenStyle.SolidLine)
         painter.setPen(pen)
         painter.setBrush(QBrush(bg_color))
         painter.drawRoundedRect(1, 1, w - 2, h - 2, 3, 3)
@@ -300,9 +358,9 @@ class ClickBarButton(QPushButton):
             # 전원 아이콘 (ON: 그린, OFF: 레드/그레이)
             icon_color = QColor(34, 197, 94) if self.is_power_on else QColor(239, 68, 68)
             pen = QPen(icon_color, 2.0)
-            pen.setCapStyle(Qt.RoundCap)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(pen)
-            painter.setBrush(Qt.NoBrush)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             
             # 열린 원
             arc_r = 5.5
@@ -336,7 +394,7 @@ class ClickBarButton(QPushButton):
         elif self.key == "DRAG":
             # 사용자 원본 이미지: 좌측 점선 + 우측으로 벌어지는 삼각형 (···◁)
             # 점선 3개 점
-            painter.setPen(Qt.NoPen)
+            painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(QColor(15, 23, 42)))
             for dot_x in [cx - 7.5, cx - 4.5, cx - 1.5]:
                 painter.drawEllipse(QPoint(int(dot_x), int(cy)), 1.2, 1.2)
@@ -369,7 +427,7 @@ class ClickBarButton(QPushButton):
             painter.scale(0.7, 0.7)
             painter.rotate(-45)
             
-            pen = QPen(QColor(51, 65, 85), 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+            pen = QPen(QColor(51, 65, 85), 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
             painter.setBrush(QBrush(QColor(226, 232, 240)))
             
@@ -398,7 +456,7 @@ class ClickBarButton(QPushButton):
             painter.setBrush(QBrush(QColor(254, 226, 226)))
             painter.drawRoundedRect(QRect(int(cx - box_r), int(cy - box_r), int(box_r * 2), int(box_r * 2)), 1, 1)
             
-            painter.setPen(QPen(QColor(185, 28, 28), 1.5, Qt.SolidLine, Qt.RoundCap))
+            painter.setPen(QPen(QColor(185, 28, 28), 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
             painter.drawLine(QPoint(int(cx - 3), int(cy - 3)), QPoint(int(cx + 3), int(cy + 3)))
             painter.drawLine(QPoint(int(cx + 3), int(cy - 3)), QPoint(int(cx - 3), int(cy + 3)))
 
@@ -442,8 +500,9 @@ class ClickBarButton(QPushButton):
             painter.drawPath(rt)
 
         # 3. 하단 텍스트 라벨 렌더링
-        font = QFont("Segoe UI", 6, QFont.Bold)
-        font.setLetterSpacing(QFont.AbsoluteSpacing, 0.2)
+        font = QFont("Segoe UI", 6)
+        font.setBold(True)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.2)
         painter.setFont(font)
         painter.setPen(text_color)
         
@@ -451,7 +510,7 @@ class ClickBarButton(QPushButton):
         label = self.label_text
         if self.key == "ON/OFF":
             label = "ON" if self.is_power_on else "OFF"
-        painter.drawText(text_rect, Qt.AlignCenter, label)
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, label)
 
 # ========================================================
 # 3. 설정 대화상자 (Setup Dialog)
@@ -460,16 +519,16 @@ class ClickBarSetupDialog(QDialog):
     """
     머무름 클릭 바 세부 설정 (대기 시간, 반경, 사운드, 자동 복귀 등)
     """
-    def __init__(self, cfg, on_save_callback=None, parent_window=None):
+    def __init__(self, cfg, on_save_callback=None, parent_window: Any = None):
         super().__init__(None)  # 독립 윈도우로 생성하여 부모 종속 및 Z-order 충돌 방지
         self.cfg = cfg
         self.on_save_callback = on_save_callback
-        self.parent_window = parent_window
+        self.parent_window: Any = parent_window
         self.setWindowTitle("Click Bar 설정")
-        self.setFixedSize(400, 420)
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_ShowWithoutActivating, False)
-        self.setAttribute(Qt.WA_QuitOnClose, False)  # 설정창이 닫혀도 클릭바 앱이 절대 종료되지 않도록 보장
+        self.setFixedSize(400, 460)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)  # 설정창이 닫혀도 클릭바 앱이 절대 종료되지 않도록 보장
         ico_path = os.path.join(get_base_dir(), "clickbar.ico")
         if os.path.exists(ico_path):
             self.setWindowIcon(QIcon(ico_path))
@@ -561,7 +620,7 @@ class ClickBarSetupDialog(QDialog):
         t_header.addWidget(self.t_val_lbl)
         time_box.addLayout(t_header)
 
-        self.time_slider = QSlider(Qt.Horizontal)
+        self.time_slider = QSlider(Qt.Orientation.Horizontal)
         self.time_slider.setRange(1, 25)  # 0.1 ~ 2.5s (최소 0.1초)
         self.time_slider.setValue(max(1, int(round(cur_dwell * 10))))
         self.time_slider.valueChanged.connect(self._on_time_changed)
@@ -579,7 +638,7 @@ class ClickBarSetupDialog(QDialog):
         r_header.addWidget(self.r_val_lbl)
         rad_box.addLayout(r_header)
 
-        self.rad_slider = QSlider(Qt.Horizontal)
+        self.rad_slider = QSlider(Qt.Orientation.Horizontal)
         self.rad_slider.setRange(5, 30)
         self.rad_slider.setValue(int(self.cfg['dwell_radius']))
         self.rad_slider.valueChanged.connect(self._on_rad_changed)
@@ -587,6 +646,10 @@ class ClickBarSetupDialog(QDialog):
         layout.addLayout(rad_box)
 
         # 3. 체크박스 옵션들
+        self.chk_topmost = QCheckBox("항상 위에 표시 (Always on Top)")
+        self.chk_topmost.setChecked(self.cfg.get("always_on_top", True))
+        layout.addWidget(self.chk_topmost)
+
         self.chk_revert = QCheckBox("클릭 후 일반 좌클릭(LEFT)으로 자동 복귀")
         self.chk_revert.setChecked(self.cfg.get("auto_revert", True))
         layout.addWidget(self.chk_revert)
@@ -611,12 +674,12 @@ class ClickBarSetupDialog(QDialog):
         
         cancel_btn = QPushButton("취소")
         cancel_btn.setObjectName("CancelBtn")
-        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         cancel_btn.clicked.connect(self.close)
         
         save_btn = QPushButton("저장")
         save_btn.setObjectName("SaveBtn")
-        save_btn.setCursor(Qt.PointingHandCursor)
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         save_btn.clicked.connect(self._on_save)
         
         btn_box.addWidget(cancel_btn)
@@ -628,7 +691,7 @@ class ClickBarSetupDialog(QDialog):
         hwnd = int(self.winId())
         user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002)
         # 설정창 표시 후에도 클릭바가 항상 더 최우선 최상단이 되도록 보장
-        if self.parent_window and hasattr(self.parent_window, '_ensure_topmost'):
+        if self.parent_window and hasattr(self.parent_window, '_ensure_topmost') and self.parent_window.cfg.get("always_on_top", True):
             self.parent_window._ensure_topmost()
 
     def _on_time_changed(self, val):
@@ -641,6 +704,7 @@ class ClickBarSetupDialog(QDialog):
     def _on_save(self):
         self.cfg["dwell_time"] = self.time_slider.value() / 10.0
         self.cfg["dwell_radius"] = self.rad_slider.value()
+        self.cfg["always_on_top"] = self.chk_topmost.isChecked()
         self.cfg["auto_revert"] = self.chk_revert.isChecked()
         self.cfg["sound_enabled"] = self.chk_sound.isChecked()
         self.cfg["visual_indicator"] = self.chk_visual.isChecked()
@@ -651,11 +715,13 @@ class ClickBarSetupDialog(QDialog):
         self.close()
 
     def closeEvent(self, event):
-        # 설정창이 닫힐 때 클릭바 쿨다운을 부여하여 의도치 않은 잔여 클릭 방지 및 클릭바 최우선순위 복구
-        if self.parent_window and hasattr(self.parent_window, '_ensure_topmost'):
+        # 설정창이 닫힐 때 클릭바 쿨다운 부여 및 설정창 관련 잔여 메모리 즉시 반환
+        if self.parent_window:
             self.parent_window.is_cooling_down = True
             self.parent_window.cooldown_end_time = time.time() + 0.5
-            self.parent_window._ensure_topmost()
+            if self.parent_window.cfg.get("always_on_top", True) and hasattr(self.parent_window, '_ensure_topmost'):
+                self.parent_window._ensure_topmost()
+        trim_process_memory()
         event.accept()
 
 # ========================================================
@@ -669,20 +735,18 @@ class ClickBarWindow(QWidget):
         super().__init__()
         self.cfg = load_config()
 
-        # 윈도우 속성 설정 (항상 위, 프레임리스, 작업 표시줄 노출, 포커스 비활성화)
+        # 윈도우 속성 설정 (작업표시줄 등록, 프레임리스)
         self.setWindowTitle("ClickBar")
-        self.setWindowFlags(
-            Qt.Window |
-            Qt.FramelessWindowHint |
-            Qt.WindowStaysOnTopHint
-        )
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_QuitOnClose, False)
+        flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
+        if self.cfg.get("always_on_top", True):
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        self.setWindowFlags(flags)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
 
         self.buttons = {}
         self.is_dragging_mouse = False  # DRAG 모드 동작 중 여부
-        self.drag_start_pos = None     # 툴바 윈도우 자체 이동용
         self.is_follow_moving = False  # MOVE 버튼 클릭 토글 이동 모드
         self.follow_offset_x = 0
         self.follow_offset_y = 0
@@ -722,28 +786,132 @@ class ClickBarWindow(QWidget):
         if os.path.exists(ico_path):
             self.setWindowIcon(QIcon(ico_path))
 
+        # 4. 팟플레이어 등 다른 창의 최상위 전환 시 0ms 즉시 최상위 복구 실시간 훅 등록
+        self._hook = None
+        self._hook_c_proc = None
+        self._setup_foreground_hook()
+
+        # 5. 메모리 최적화: 초기 UI 렌더링 직후 및 60초 주기 자동 트림 (점유율 1~3MB대 유지)
+        QTimer.singleShot(800, trim_process_memory)
+        self.mem_trim_timer = QTimer(self)
+        self.mem_trim_timer.timeout.connect(trim_process_memory)
+        self.mem_trim_timer.start(60000)
+
+    def _setup_foreground_hook(self):
+        """팟플레이어 등 다른 창이 최상위로 올라왔을 때 0ms 즉시 감지하여 클릭바를 최상단에 유지하는 실시간 훅"""
+        def hook_proc(hHook, event, hwnd, idObject, idChild, dwEventThread, dwmsEventTime):
+            try:
+                if not self.cfg.get("always_on_top", True):
+                    return
+                my_hwnd = int(self.winId()) if self.isVisible() else 0
+                dlg_hwnd = int(self.setup_dialog.winId()) if (self.setup_dialog and self.setup_dialog.isVisible()) else 0
+                if hwnd and hwnd != my_hwnd and hwnd != dlg_hwnd:
+                    self._ensure_topmost()
+            except Exception:
+                pass
+
+        self._hook_c_proc = WINEVENTPROC(hook_proc)
+        self._hook = user32.SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            0,
+            self._hook_c_proc,
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT
+        )
+
     def showEvent(self, event):
         super().showEvent(event)
-        # Windows API를 호출하여 작업 표시줄 등록(WS_EX_APPWINDOW), 포커스 비활성화(WS_EX_NOACTIVATE) 및 최상위(WS_EX_TOPMOST) 보장
+        # Windows API를 호출하여 작업 표시줄 노출(WS_EX_APPWINDOW) 및 포커스 비활성화(WS_EX_NOACTIVATE) 적용
         hwnd = int(self.winId())
         style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-        style = (style | WS_EX_APPWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST) & ~WS_EX_TOOLWINDOW
+        style = (style | WS_EX_APPWINDOW | WS_EX_NOACTIVATE) & ~WS_EX_TOOLWINDOW
+        if self.cfg.get("always_on_top", True):
+            style |= WS_EX_TOPMOST
+        else:
+            style &= ~WS_EX_TOPMOST
         user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
-        self._ensure_topmost()
+        if self.cfg.get("always_on_top", True):
+            self._ensure_topmost()
+
+    def _is_topmost_lost(self):
+        """내 창 위에 다른 최상위 창이 올라와 Z-order가 밀렸는지 실시간 검사"""
+        if not self.isVisible():
+            return False
+        hwnd = int(self.winId())
+        prev = user32.GetWindow(hwnd, GW_HWNDPREV)
+        if prev and user32.IsWindowVisible(prev):
+            dlg_hwnd = int(self.setup_dialog.winId()) if (self.setup_dialog and self.setup_dialog.isVisible()) else 0
+            ov_hwnd = int(self.overlay.winId()) if (hasattr(self, 'overlay') and self.overlay and self.overlay.isVisible()) else 0
+            if prev != dlg_hwnd and prev != ov_hwnd:
+                return True
+        return False
 
     def _ensure_topmost(self):
-        """클릭바 및 오버레이가 어떤 창(설정창, 브라우저 등)보다도 항상 화면 최상단 최우선순위에 위치하도록 보장"""
+        """클릭바 및 오버레이가 화면 최상단에 위치하도록 보장 (팟플레이어 등 다른 Topmost 창 경쟁 극복)"""
+        if not self.cfg.get("always_on_top", True) or not self.isVisible():
+            return
         hwnd = int(self.winId())
-        user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
+        flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER
+
+        # Windows OS 특성상 이미 Topmost인 창은 단순 SetWindowPos(-1) 호출 시 Z-order 갱신이 무시됨.
+        # HWND_NOTOPMOST(-2)로 살짝 토글 후 즉시 HWND_TOPMOST(-1) 재등록 + BringWindowToTop 호출하여 강제 최상위 복귀
+        user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
+        user32.BringWindowToTop(hwnd)
+
         if hasattr(self, 'overlay') and self.overlay and self.overlay.isVisible():
             ov_hwnd = int(self.overlay.winId())
-            user32.SetWindowPos(ov_hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
+            user32.SetWindowPos(ov_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+            user32.SetWindowPos(ov_hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
+            user32.BringWindowToTop(ov_hwnd)
+
+    def _apply_always_on_top(self, enabled):
+        """
+        항상 위(Always on Top) 설정 토글 (작업표시줄 노출 상태 유지).
+        enabled=True: WS_EX_APPWINDOW + WS_EX_TOPMOST (작업표시줄 표시 및 최상위 유지)
+        enabled=False: WS_EX_TOPMOST 해제 및 일반 창 뒤로 내려갈 수 있도록 HWND_NOTOPMOST 설정
+        """
+        hwnd = int(self.winId())
+        cur_pos = self.pos()
+
+        # 1. Qt 윈도우 플래그 동기화 (작업표시줄 노출을 위해 Qt.Window 유지)
+        flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
+        if enabled:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        self.setWindowFlags(flags)
+        self.show()
+        self.move(cur_pos)
+
+        # 2. Win32 Extended Style 및 Z-order 동기화
+        style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        style = (style | WS_EX_APPWINDOW | WS_EX_NOACTIVATE) & ~WS_EX_TOOLWINDOW
+
+        HWND_TOPMOST = -1
+        HWND_NOTOPMOST = -2
+        SWP_NOSIZE = 0x0001
+        SWP_NOMOVE = 0x0002
+        SWP_NOACTIVATE = 0x0010
+        SWP_FRAMECHANGED = 0x0020
+        SWP_SHOWWINDOW = 0x0040
+        swp_flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW
+
+        if enabled:
+            style |= WS_EX_TOPMOST
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, swp_flags)
+        else:
+            style &= ~WS_EX_TOPMOST
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+            user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, swp_flags)
 
     def _apply_config_update(self, new_cfg):
         """설정창에서 변경된 설정을 즉시 실시간 동기화"""
         self.cfg = new_cfg
         self.set_mode(self.cfg.get("current_mode", "LEFT"))
         self._update_power_ui()
+        self._apply_always_on_top(self.cfg.get("always_on_top", True))
 
     def _init_ui(self):
         # 외곽 프레임 (30% 콤팩트 축소 마진)
@@ -957,8 +1125,9 @@ class ClickBarWindow(QWidget):
             else:
                 self.setup_dialog.raise_()
                 self.setup_dialog.activateWindow()
-            # 클릭바가 설정창보다 더 최우선 최상위에 있도록 Z-order 갱신
-            self._ensure_topmost()
+            # 항상 위 모드일 때만 클릭바 Z-order 최상위 보장
+            if self.cfg.get("always_on_top", True):
+                self._ensure_topmost()
             self.is_cooling_down = True
             self.cooldown_end_time = time.time() + 0.4
 
@@ -987,21 +1156,7 @@ class ClickBarWindow(QWidget):
                 self.buttons["DRAG"].update()
 
     # ========================================================
-    # 마우스 드래그를 통한 툴바 자유 위치 이동 헬퍼
-    # ========================================================
-    def _start_window_drag(self, global_pt):
-        self.drag_start_pos = global_pt - self.frameGeometry().topLeft()
-
-    def _perform_window_drag(self, global_pt):
-        if self.drag_start_pos is not None:
-            new_pos = global_pt - self.drag_start_pos
-            screen = QApplication.primaryScreen().availableGeometry()
-            nx = max(screen.left(), min(new_pos.x(), screen.right() - self.width()))
-            ny = max(screen.top(), min(new_pos.y(), screen.bottom() - self.height()))
-            self.move(nx, ny)
-
-    # ========================================================
-    # 마우스 드래그를 통한 툴바 자유 위치 이동 헬퍼
+    # 마우스 드래그를 통한 툴바 자유 위치 이동 (Win32 네이티브)
     # ========================================================
     def _start_native_drag(self):
         """Windows OS 네이티브 창 이동을 시작하여 끊김 없이 100% 부드럽게 마우스 드래그 수행"""
@@ -1025,24 +1180,13 @@ class ClickBarWindow(QWidget):
         self.dwell_start_time = time.time()
         self.cooldown_end_time = time.time() + 0.4
 
-    def _start_window_drag(self, global_pt):
-        self._start_native_drag()
-
-    def _perform_window_drag(self, global_pt):
-        pass
-
-    def _end_window_drag(self):
-        self.cfg["pos_x"] = self.x()
-        self.cfg["pos_y"] = self.y()
-        save_config(self.cfg)
-
     def mousePressEvent(self, event):
         if self.is_follow_moving:
             # 따라오기 모드 중 창 클릭 시 현재 위치 고정
             self._stop_follow_moving()
             event.accept()
             return
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self._start_native_drag()
             event.accept()
 
@@ -1062,10 +1206,13 @@ class ClickBarWindow(QWidget):
         cur_y = cur_pos.y()
         now = time.time()
 
-        # [최우선순위 보장] 매 0.5초마다 어떤 창이 새로 뜨거나 활성화되더라도 클릭바를 화면 맨 위 최상위(HWND_TOPMOST)로 유지
-        if now - self.last_topmost_check > 0.5:
-            self.last_topmost_check = now
-            self._ensure_topmost()
+        # [최우선순위 보장] 항상 위 옵션이 켜져 있을 때 화면 최상단(HWND_TOPMOST) 유지
+        if self.cfg.get("always_on_top", True):
+            # 1) 다른 창이 내 위로 올라왔을 경우 지연 없이 즉각(0ms) 복구
+            # 2) 주기적 안전장치로 최소 0.2초마다 보장
+            if self._is_topmost_lost() or (now - self.last_topmost_check > 0.2):
+                self.last_topmost_check = now
+                self._ensure_topmost()
 
         # 0. MOVE 버튼 따라오기(Follow Moving) 모드 동작 중일 때
         if self.is_follow_moving:
@@ -1137,8 +1284,11 @@ class ClickBarWindow(QWidget):
         frame_rect = QRect(frame_pos, self.frame.size())
         is_on_bar = frame_rect.contains(cur_pos) or self.frameGeometry().contains(cur_pos)
 
-        # 3-2. 정확히 어떤 버튼 위에 커서가 있는지 확인
-        target_btn_key, target_btn = self._get_button_under_cursor(cur_pos)
+        # 3-2. 정확히 어떤 버튼 위에 커서가 있는지 확인 (바 위에 있을 때만 조회하여 CPU/메모리 부하 절감)
+        if is_on_bar:
+            target_btn_key, target_btn = self._get_button_under_cursor(cur_pos)
+        else:
+            target_btn_key, target_btn = None, None
 
         # 3-3. 설정창 위인지 확인
         is_on_setup = False
@@ -1310,9 +1460,18 @@ class ClickBarWindow(QWidget):
         self.dwell_anchor_y = gy
 
     def closeEvent(self, event):
+        # 훅 해제
+        if self._hook:
+            try:
+                user32.UnhookWinEvent(self._hook)
+            except Exception:
+                pass
+            self._hook = None
         # 종료 시 오버레이 및 타이머 해제
         self._release_drag()
         self.dwell_timer.stop()
+        if hasattr(self, 'mem_trim_timer') and self.mem_trim_timer:
+            self.mem_trim_timer.stop()
         if self.overlay:
             self.overlay.close()
         event.accept()

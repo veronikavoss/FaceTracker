@@ -7,3 +7,5 @@ dist_face_tracker/
 dist/
 scratch/
 *.log
+.vscode/
+pyrightconfig.json

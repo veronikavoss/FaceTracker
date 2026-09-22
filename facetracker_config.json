@@ -9,7 +9,9 @@
     "camera_width": 640,
     "camera_height": 480,
     "enable_click_bar": true,
+    "close_clickbar_on_exit": true,
     "auto_start_windows": false,
+    "auto_start_tracking": false,
     "current_profile": "my profile",
     "profiles": {
         "기본": {

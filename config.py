@@ -3,9 +3,20 @@ import os
 import sys
 
 def get_base_dir():
-    """실행 파일(Nuitka/PyInstaller) 환경과 일반 스크립트 실행 환경을 자동 감지하여 기준 폴더 반환"""
-    if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
+    """
+    실행 파일(Nuitka/PyInstaller) 환경과 일반 스크립트 실행 환경을 자동 감지하여 기준 폴더 반환.
+    Nuitka standalone, PyInstaller, 일반 python 실행 모두에서 항상 정확한 실행 폴더 절대 경로를 반환합니다.
+    """
+    # 1. PyInstaller (sys.frozen) 또는 Nuitka (__compiled__) 환경 감지
+    if getattr(sys, 'frozen', False) or hasattr(sys, '__compiled__') or '__compiled__' in globals():
+        return os.path.dirname(os.path.abspath(sys.executable))
+    
+    # 2. sys.executable이 python.exe / pythonw.exe가 아닌 경우 (컴파일된 exe 실행 파일인 경우)
+    exe_name = os.path.basename(sys.executable).lower()
+    if not exe_name.startswith("python"):
+        return os.path.dirname(os.path.abspath(sys.executable))
+        
+    # 3. 개발 중 .py 직접 실행 환경
     return os.path.dirname(os.path.abspath(__file__))
 
 CONFIG_FILE = os.path.join(get_base_dir(), "facetracker_config.json")
@@ -32,6 +43,7 @@ DEFAULT_CONFIG = {
     "camera_width": 640,          # 카메라 해상도 가로
     "camera_height": 480,         # 카메라 해상도 세로
     "enable_click_bar": False,    # 머무름 클릭 바 자동 실행 여부
+    "close_clickbar_on_exit": True, # 페이스 트래커 종료 시 클릭바도 함께 닫기 여부
     "auto_start_windows": False,  # 윈도우 부팅 시 자동 시작 여부
     "auto_start_tracking": False, # 앱 실행 시 코끝 추적 자동 시작 여부
     "current_profile": "기본",
@@ -95,3 +107,30 @@ def get_current_profile_data(config):
         "illumination_threshold": config.get("illumination_threshold", 10.0),
         "spike_threshold": config.get("spike_threshold", 15.0)
     }
+
+# ========================================================
+# Windows 작업 세트(Working Set) 메모리 최적화 유틸리티
+# ========================================================
+_kernel32 = None
+if sys.platform == "win32":
+    try:
+        import ctypes
+        from ctypes import wintypes
+        _kernel32 = ctypes.windll.kernel32
+        _kernel32.SetProcessWorkingSetSize.argtypes = [wintypes.HANDLE, ctypes.c_size_t, ctypes.c_size_t]
+        _kernel32.SetProcessWorkingSetSize.restype = wintypes.BOOL
+    except Exception:
+        _kernel32 = None
+
+def trim_process_memory():
+    """Windows OS에 프로세스의 불필요한 작업 세트(Working Set) 메모리를 즉시 반환하도록 요청하여 메모리 점유율을 극소화"""
+    try:
+        import gc
+        gc.collect()
+        if _kernel32:
+            import ctypes
+            h_process = _kernel32.GetCurrentProcess()
+            _kernel32.SetProcessWorkingSetSize(h_process, ctypes.c_size_t(-1), ctypes.c_size_t(-1))
+    except Exception:
+        pass
+

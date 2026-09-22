@@ -4,8 +4,92 @@ import threading
 import time
 import os
 import urllib.request
+import ctypes
+from ctypes import wintypes
+import struct
 from filters import EMASmoothingFilter
-from config import get_base_dir
+from config import get_base_dir, trim_process_memory
+
+# ========================================================
+# DirectShow IKsPropertySet API 선언 (카메라 고급 제어)
+# ========================================================
+class GUID(ctypes.Structure):
+    _fields_ = [
+        ('Data1', wintypes.DWORD),
+        ('Data2', wintypes.WORD),
+        ('Data3', wintypes.WORD),
+        ('Data4', ctypes.c_ubyte * 8)
+    ]
+    def __init__(self, d1, d2, d3, d4):
+        super().__init__(d1, d2, d3, (ctypes.c_ubyte * 8)(*d4))
+
+CLSID_SystemDeviceEnum = GUID(0x62be5d10, 0x60eb, 0x11d0, [0xbd, 0x3b, 0x00, 0xa0, 0xc9, 0x11, 0xce, 0x86])
+CLSID_VideoInputDeviceCategory = GUID(0x860bb310, 0x5d01, 0x11d0, [0xbd, 0x3b, 0x00, 0xa0, 0xc9, 0x11, 0xce, 0x86])
+IID_ICreateDevEnum = GUID(0x29840822, 0x5b84, 0x11d0, [0xbd, 0x3b, 0x00, 0xa0, 0xc9, 0x11, 0xce, 0x86])
+IID_IBaseFilter = GUID(0x56a86895, 0x0ad4, 0x11ce, [0xb0, 0x3a, 0x00, 0x20, 0xaf, 0x0b, 0xa7, 0x70])
+IID_IKsPropertySet = GUID(0x31efac30, 0x515c, 0x11d0, [0xa9, 0xaa, 0x00, 0xaa, 0x00, 0x61, 0xbe, 0x93])
+PROPSETID_VIDCAP_CAMERACONTROL = GUID(0xC6E13370, 0x30AC, 0x11d0, [0xA1, 0x8C, 0x00, 0xA0, 0xC9, 0x11, 0x89, 0x56])
+PROPSETID_VIDCAP_VIDEOPROCAMP = GUID(0xC6E13360, 0x30AC, 0x11d0, [0xA1, 0x8C, 0x00, 0xA0, 0xC9, 0x11, 0x89, 0x56])
+
+def disable_camera_low_light_compensation(target_cam_index=None):
+    """
+    Windows DirectShow IKsPropertySet API를 직접 제어하여
+    어떤 카메라든 고급 옵션의 '낮은 조도 보상(Low Light Compensation)'을 100% 강제 해제(0)합니다.
+    target_cam_index가 None이면 시스템에 연결된 모든 웹캠에 일괄 적용합니다.
+    """
+    if os.name != 'nt':
+        return 0
+    count = 0
+    try:
+        ole32 = ctypes.windll.ole32
+        ole32.CoInitialize(None)
+        pDevEnum = ctypes.c_void_p()
+        hr = ole32.CoCreateInstance(ctypes.byref(CLSID_SystemDeviceEnum), None, 1, ctypes.byref(IID_ICreateDevEnum), ctypes.byref(pDevEnum))
+        if hr != 0 or not pDevEnum:
+            return count
+        vtable = ctypes.cast(pDevEnum, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+        CreateClassEnumerator = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.POINTER(GUID), ctypes.POINTER(ctypes.c_void_p), wintypes.DWORD)(vtable[3])
+        pEnum = ctypes.c_void_p()
+        hr = CreateClassEnumerator(pDevEnum, ctypes.byref(CLSID_VideoInputDeviceCategory), ctypes.byref(pEnum), 0)
+        if hr != 0 or not pEnum:
+            return count
+
+        vtable_enum = ctypes.cast(pEnum, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+        EnumNext = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, wintypes.ULONG, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.ULONG))(vtable_enum[3])
+
+        pMoniker = ctypes.c_void_p()
+        fetched = wintypes.ULONG()
+        idx = 0
+        while EnumNext(pEnum, 1, ctypes.byref(pMoniker), ctypes.byref(fetched)) == 0 and fetched.value == 1:
+            if target_cam_index is None or idx == target_cam_index:
+                vtable_mon = ctypes.cast(pMoniker, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+                BindToObject = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(GUID), ctypes.POINTER(ctypes.c_void_p))(vtable_mon[8])
+                pFilter = ctypes.c_void_p()
+                if BindToObject(pMoniker, None, None, ctypes.byref(IID_IBaseFilter), ctypes.byref(pFilter)) == 0:
+                    vtable_fil = ctypes.cast(pFilter, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+                    QI = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.POINTER(GUID), ctypes.POINTER(ctypes.c_void_p))(vtable_fil[0])
+                    pKsProp = ctypes.c_void_p()
+                    if QI(pFilter, ctypes.byref(IID_IKsPropertySet), ctypes.byref(pKsProp)) == 0:
+                        vtable_ks = ctypes.cast(pKsProp, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+                        KS_Set = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.POINTER(GUID), wintypes.ULONG, ctypes.c_void_p, wintypes.ULONG, ctypes.c_void_p, wintypes.ULONG)(vtable_ks[3])
+
+                        # 40바이트 KSPROPERTY_CAMERACONTROL_S 버퍼 (Value=0: 체크 해제, Flags=1: Manual)
+                        buf = (ctypes.c_byte * 40)()
+                        struct.pack_into('<iii', buf, 24, 0, 1, 0)
+                        
+                        # Property 19: KSPROPERTY_CAMERACONTROL_AUTO_EXPOSURE_PRIORITY (낮은 조도 보상) 해제
+                        hr19 = KS_Set(pKsProp, ctypes.byref(PROPSETID_VIDCAP_CAMERACONTROL), 19, None, 0, ctypes.byref(buf), 40)
+                        if hr19 == 0:
+                            count += 1
+
+                        # Property 8: VideoProcAmp_BacklightCompensation (역광 보정/배경빛 보상) 해제
+                        buf8 = (ctypes.c_byte * 40)()
+                        struct.pack_into('<iii', buf8, 24, 0, 1, 0)
+                        KS_Set(pKsProp, ctypes.byref(PROPSETID_VIDCAP_VIDEOPROCAMP), 8, None, 0, ctypes.byref(buf8), 40)
+            idx += 1
+    except Exception as e:
+        print(f"[카메라] DirectShow 낮은 조도 보상 해제 중 오류: {e}")
+    return count
 
 class FaceTracker(threading.Thread):
     def __init__(self, config, on_frame_callback=None, on_move_callback=None):
@@ -50,6 +134,9 @@ class FaceTracker(threading.Thread):
         # 스레드 안전 카메라 동기화 락 및 안전한 재시작 플래그
         self.camera_lock = threading.Lock()
         self._restart_requested = False
+
+        # CLAHE 인스턴스 1회 초기화 및 재사용 (반복 객체 생성으로 인한 메모리 누적 방지)
+        self.clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
 
     def _compute_file_sha256(self, filepath):
         """파일의 SHA-256 체크섬을 계산하여 반환합니다."""
@@ -141,6 +228,7 @@ class FaceTracker(threading.Thread):
                 except Exception:
                     pass
                 self.cap = None
+        trim_process_memory()
 
     def restart_camera(self):
         """GUI 또는 외부 스레드에서 안전하게 카메라 재설정을 요청 (스레드 간 충돌 100% 방지)"""
@@ -159,6 +247,7 @@ class FaceTracker(threading.Thread):
         self.face_rect_smooth = None
         self.prev_brightness = None
         self.yunet_filter.reset()
+        trim_process_memory()
 
     def set_auto_exposure(self, auto):
         if self.cap and self.cap.isOpened():
@@ -181,6 +270,9 @@ class FaceTracker(threading.Thread):
                     else:
                         self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
                     self.cap.set(cv2.CAP_PROP_EXPOSURE, -7.0)
+                # 자동 노출 제어 후 드라이버에 의해 낮은 조도 보상이 다시 켜지지 않도록 해제 유지
+                cam_id = int(self.config.get("camera_id", 0))
+                disable_camera_low_light_compensation(cam_id)
             except Exception as e:
                 print(f"노출 제어 설정 중 에러: {e}")
 
@@ -264,7 +356,7 @@ class FaceTracker(threading.Thread):
                 
                 applied_fps = 0
                 for codec in preferred_codecs:
-                    fourcc = cv2.VideoWriter_fourcc(*codec)
+                    fourcc = cv2.VideoWriter.fourcc(*codec)
                     self.cap.set(cv2.CAP_PROP_FOURCC, fourcc)
                     self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, target_w)
                     self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, target_h)
@@ -282,9 +374,25 @@ class FaceTracker(threading.Thread):
                     h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                     print(f"[카메라 설정] 해상도: {w}x{h} | FPS: {applied_fps}")
                 
+                # 1. OpenCV 레벨 역광/조도 보상 해제
+                try:
+                    self.cap.set(cv2.CAP_PROP_BACKLIGHT, 0)
+                except Exception:
+                    pass
+
+                # 2. Windows DirectShow IKsPropertySet 레벨 낮은 조도 보상(Low Light Compensation) 강제 해제
+                disabled_cnt = disable_camera_low_light_compensation(cam_id)
+                if disabled_cnt > 0:
+                    print(f"[카메라 {cam_id}] 고급 설정의 '낮은 조도 보상(Low Light Compensation)'을 자동 해제했습니다.")
+
+                # 3. 노출 모드 적용
                 auto_exp = self.config.get("auto_exposure", True)
                 lock_fps = self.config.get("lock_fps_low_light", False)
                 self.set_auto_exposure(auto_exp and not lock_fps)
+
+                # 4. 자동 노출 설정 과정에서 드라이버가 낮은 조도 보상을 다시 켜지 못하도록 한 번 더 보장
+                disable_camera_low_light_compensation(cam_id)
+
                 self.last_heartbeat = time.time()
                 return True
         except Exception as e:
@@ -396,8 +504,7 @@ class FaceTracker(threading.Thread):
                     
                     # CLAHE 조명 보정
                     if is_low_light:
-                        clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
-                        gray_enhanced = clahe.apply(gray)
+                        gray_enhanced = self.clahe.apply(gray)
                         gray = cv2.GaussianBlur(gray_enhanced, (3, 3), 0)
                     else:
                         gray = cv2.GaussianBlur(gray, (3, 3), 0)
@@ -423,7 +530,8 @@ class FaceTracker(threading.Thread):
                             current_point = self.track_point
                             current_gray = self.prev_gray
                             
-                            next_point, status, err = cv2.calcOpticalFlowPyrLK(
+                            calc_flow = getattr(cv2, 'calcOpticalFlowPyrLK')
+                            next_point, status, err = calc_flow(
                                 current_gray, gray, current_point, None, **self.lk_params
                             )
                             
