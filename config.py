@@ -21,7 +21,9 @@ def get_base_dir():
 
 CONFIG_FILE = os.path.join(get_base_dir(), "facetracker_config.json")
 
-DEFAULT_PROFILE_DATA = {
+from typing import Any, Dict
+
+DEFAULT_PROFILE_DATA: Dict[str, Any] = {
     "sensitivity_x": 25,
     "sensitivity_y": 25,
     "motion_threshold": 2,
@@ -32,7 +34,7 @@ DEFAULT_PROFILE_DATA = {
     "spike_threshold": 15.0
 }
 
-DEFAULT_CONFIG = {
+DEFAULT_CONFIG: Dict[str, Any] = {
     "camera_id": 0,
     "tracking_toggle_key": "f12",  # 활성/비활성 전환 키
     "auto_exposure": True,        # 카메라 자동 노출 활성화
@@ -51,7 +53,14 @@ DEFAULT_CONFIG = {
         "기본": DEFAULT_PROFILE_DATA.copy()
     },
     # 기본 프로필 값 복사
-    **DEFAULT_PROFILE_DATA
+    "sensitivity_x": 25,
+    "sensitivity_y": 25,
+    "motion_threshold": 2,
+    "smoothing": 3,
+    "acceleration": 5,
+    "correction_interval": 5,
+    "illumination_threshold": 10.0,
+    "spike_threshold": 15.0
 }
 
 def load_config():

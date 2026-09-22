@@ -1465,28 +1465,28 @@ class FaceTrackerGUI(QWidget):
             self.tracker.open_camera_settings_dialog()
 
     def _on_reset_defaults(self):
-        defaults = config.DEFAULT_CONFIG.copy()
-        for k, v in config.DEFAULT_PROFILE_DATA.items():
+        defaults = config.DEFAULT_PROFILE_DATA.copy()
+        for k, v in defaults.items():
             self.config[k] = v
         config.save_config(self.config)
         
-        self.sx_slider.setValue(int(defaults["sensitivity_x"]))
-        self.sy_slider.setValue(int(defaults["sensitivity_y"]))
-        self.th_slider.setValue(int(defaults["motion_threshold"]))
-        self.sm_slider.setValue(int(defaults["smoothing"]))
-        self.acc_slider.setValue(int(defaults["acceleration"]))
-        self.ci_slider.setValue(int(defaults["correction_interval"]))
-        self.il_slider.setValue(int(float(defaults["illumination_threshold"]) * 10))
-        self.sp_slider.setValue(int(float(defaults["spike_threshold"]) * 10))
+        self.sx_slider.setValue(int(defaults.get("sensitivity_x", 25)))
+        self.sy_slider.setValue(int(defaults.get("sensitivity_y", 25)))
+        self.th_slider.setValue(int(defaults.get("motion_threshold", 2)))
+        self.sm_slider.setValue(int(defaults.get("smoothing", 3)))
+        self.acc_slider.setValue(int(defaults.get("acceleration", 5)))
+        self.ci_slider.setValue(int(defaults.get("correction_interval", 5)))
+        self.il_slider.setValue(int(float(defaults.get("illumination_threshold", 10.0)) * 10))
+        self.sp_slider.setValue(int(float(defaults.get("spike_threshold", 15.0)) * 10))
         
-        self.sx_badge.setText(str(defaults["sensitivity_x"]))
-        self.sy_badge.setText(str(defaults["sensitivity_y"]))
-        self.th_badge.setText(str(defaults["motion_threshold"]))
-        self.sm_badge.setText(str(defaults["smoothing"]))
-        self.acc_badge.setText(str(defaults["acceleration"]))
-        self.ci_badge.setText(str(defaults["correction_interval"]))
-        self.il_badge.setText(f"{float(defaults['illumination_threshold']):.1f}")
-        self.sp_badge.setText(f"{float(defaults['spike_threshold']):.1f}px")
+        self.sx_badge.setText(str(defaults.get("sensitivity_x", 25)))
+        self.sy_badge.setText(str(defaults.get("sensitivity_y", 25)))
+        self.th_badge.setText(str(defaults.get("motion_threshold", 2)))
+        self.sm_badge.setText(str(defaults.get("smoothing", 3)))
+        self.acc_badge.setText(str(defaults.get("acceleration", 5)))
+        self.ci_badge.setText(str(defaults.get("correction_interval", 5)))
+        self.il_badge.setText(f"{float(defaults.get('illumination_threshold', 10.0)):.1f}")
+        self.sp_badge.setText(f"{float(defaults.get('spike_threshold', 15.0)):.1f}px")
         
         if hasattr(self.tracker, "yunet_filter"):
             self.tracker.yunet_filter.config = self.config
