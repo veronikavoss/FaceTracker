@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import math
 import threading
 import time
 import os
@@ -285,10 +286,17 @@ class FaceTracker(threading.Thread):
             except Exception as e:
                 print(f"카메라 설정 대화상자 호출 에러: {e}")
 
-    def _detect_yunet_face(self, frame_bgr, w, h, is_low_light=False):
+    def _detect_yunet_face(self, frame_bgr, w, h, is_low_light=False, prior_pos=None, prior_rect=None):
         """
         YuNet을 사용하여 얼굴 영역 및 코 끝 랜드마크를 검출합니다.
-        반환값: ((x, y, w, h), (nose_x, nose_y)) 또는 None
+        
+        [타깃 락온(Target Lock-on) & 화면 중앙 가중치(Center-Weighted Priority)]
+        1. prior_pos가 주어졌을 때 (추적 진행 중):
+           - 직전 타깃 위치와 가장 가까운 얼굴을 100% 우선 선택하여 타깃 고정.
+           - 다른 사람이 앵글에 들어오거나 지나가도 기존 사용자를 절대 놓치지 않음.
+           - 비정상적인 원거리 점프(허용 반경 초과)를 방지하기 위해 유효 게이트(max_gate_dist) 적용.
+        2. prior_pos가 없을 때 (추적 최초 시작 또는 타깃 유실 후 재탐색):
+           - 화면 중앙 가중치를 적용하여, 웹캠 정면에 앉아 있는 주 사용자를 최우선 타깃으로 획득.
         """
         if self.yunet_detector is None:
             return None
@@ -300,27 +308,75 @@ class FaceTracker(threading.Thread):
             
             _, faces = self.yunet_detector.detect(frame_bgr)
             
-            if faces is not None and len(faces) > 0:
-                best_face = max(faces, key=lambda f: f[2] * f[3])
-                
+            if faces is None or len(faces) == 0:
+                return None
+
+            best_face = None
+
+            # 1. 기존 추적 타깃이 있는 경우: 위치 연속성 기반 타깃 락온 (Target Lock-on)
+            if prior_pos is not None:
+                px, py = prior_pos
+                ref_size = float(prior_rect[2]) if prior_rect else float(w * 0.25)
+                # 허용 최대 이동 반경: 얼굴 폭의 1.6배 (빠른 머리 움직임 수용 & 타인으로의 점프 원천 차단)
+                max_gate_dist = max(80.0, ref_size * 1.6)
+
+                candidates = []
+                for f in faces:
+                    fx, fy, fw, fh = int(f[0]), int(f[1]), int(f[2]), int(f[3])
+                    nx = float(f[8])
+                    ny = float(f[9])
+                    if not (fx <= nx <= fx + fw and fy <= ny <= fy + fh):
+                        nx = fx + fw / 2.0
+                        ny = fy + fh * 0.55
+
+                    dist = math.hypot(nx - px, ny - py)
+                    if dist <= max_gate_dist:
+                        candidates.append((dist, f))
+
+                if candidates:
+                    # 가장 가까운 얼굴(기존 사용자)을 최우선 선택
+                    candidates.sort(key=lambda c: c[0])
+                    best_face = candidates[0][1]
+                else:
+                    # 기존 타깃 범위 내에 일치하는 얼굴이 없음 (타인으로 점프하지 않고 보호)
+                    return None
+
+            # 2. 최초 감지 또는 재탐색 시점: 화면 중앙 우선 가중치 (Center-Weighted Priority)
+            if best_face is None:
+                cx_img = w / 2.0
+                cy_img = h / 2.0
+
+                def center_weighted_score(f):
+                    fx, fy, fw, fh = float(f[0]), float(f[1]), float(f[2]), float(f[3])
+                    fcx = fx + fw / 2.0
+                    fcy = fy + fh / 2.0
+                    norm_dx = (fcx - cx_img) / (w / 2.0)
+                    norm_dy = (fcy - cy_img) / (h / 2.0)
+                    center_dist_sq = norm_dx * norm_dx + norm_dy * norm_dy
+                    area = fw * fh
+                    # 화면 중앙에 가까울수록 높은 점수 부여 (가장자리 행인/배경 오인식 감쇄)
+                    return area / (1.0 + 2.5 * center_dist_sq)
+
+                best_face = max(faces, key=center_weighted_score)
+
+            if best_face is not None:
                 fx, fy, fw, fh = int(best_face[0]), int(best_face[1]), int(best_face[2]), int(best_face[3])
                 fx = max(0, fx)
                 fy = max(0, fy)
                 fw = min(w - fx, fw)
                 fh = min(h - fy, fh)
-                
-                # YuNet 랜드마크 8, 9번 인덱스: 코 끝(nose tip)
+
                 nose_x = float(best_face[8])
                 nose_y = float(best_face[9])
-                
+
                 if not (fx <= nose_x <= fx + fw and fy <= nose_y <= fy + fh):
                     nose_x = fx + fw / 2.0
                     nose_y = fy + fh * 0.55
-                
+
                 return ((fx, fy, fw, fh), (nose_x, nose_y))
         except Exception as e:
             print(f"[YuNet] 얼굴 검출 중 예외: {e}")
-            
+
         return None
 
     def _open_camera(self):
@@ -560,7 +616,12 @@ class FaceTracker(threading.Thread):
                                 # 3. 마우스 계산 완료 후, 다음 프레임을 위한 코끝 앵커 보정 (마우스 움직임에 전혀 간섭 없음!)
                                 corr_interval = max(1, int(self.config.get("correction_interval", 5)))
                                 if self.frame_counter % corr_interval == 0:
-                                    detection = self._detect_yunet_face(frame, w, h, is_low_light)
+                                    # 타깃 락온: 현재 추적 중인 (cur_x, cur_y)를 전달하여 다른 사람이 앵글에 들어와도 100% 무시
+                                    detection = self._detect_yunet_face(
+                                        frame, w, h, is_low_light,
+                                        prior_pos=(cur_x, cur_y),
+                                        prior_rect=self.face_rect
+                                    )
                                     if detection is not None:
                                         (x, y, fw, fh), (nx, ny) = detection
                                         if self.face_rect_smooth is None:
@@ -593,7 +654,13 @@ class FaceTracker(threading.Thread):
                             else:
                                 self.reset_tracking_state()
                     else:
-                        detection = self._detect_yunet_face(frame, w, h, is_low_light)
+                        prior_p = None
+                        if self.face_rect is not None:
+                            prior_p = (self.face_rect[0] + self.face_rect[2] / 2.0, self.face_rect[1] + self.face_rect[3] / 2.0)
+                        detection = self._detect_yunet_face(frame, w, h, is_low_light, prior_pos=prior_p, prior_rect=self.face_rect)
+                        if detection is None and prior_p is not None:
+                            detection = self._detect_yunet_face(frame, w, h, is_low_light, prior_pos=None)
+
                         if detection is not None:
                             (x, y, fw, fh), (nx, ny) = detection
                             self.face_rect = (x, y, fw, fh)

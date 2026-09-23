@@ -15,8 +15,8 @@
     "current_profile": "my profile",
     "profiles": {
         "기본": {
-            "sensitivity_x": 25,
-            "sensitivity_y": 25,
+            "sensitivity_x": 20,
+            "sensitivity_y": 20,
             "motion_threshold": 2,
             "smoothing": 3,
             "acceleration": 5,
@@ -31,7 +31,7 @@
             "smoothing": 3,
             "acceleration": 5,
             "correction_interval": 5,
-            "illumination_threshold": 10.0,
+            "illumination_threshold": 5.0,
             "spike_threshold": 15.0
         }
     },
