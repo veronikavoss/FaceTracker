@@ -1643,6 +1643,15 @@ class FaceTrackerGUI(QWidget):
         kernel32 = ctypes.windll.kernel32
         WM_CLOSE = 0x0010
         PROCESS_TERMINATE = 0x0001
+        MOUSEEVENTF_LEFTUP = 0x0004
+        MOUSEEVENTF_RIGHTUP = 0x0010
+
+        # 마우스 드래그 잠금 해제 (클릭바 비정상 종료 시 마우스 좌/우클릭이 눌린 채 고착되는 현상 100% 방지)
+        try:
+            user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+            user32.mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
+        except Exception:
+            pass
 
         # 1. 실행 중인 클릭바 창에 Win32 WM_CLOSE 메시지 전송 (정상적이고 안전한 종료 유도)
         try:
@@ -1710,14 +1719,24 @@ class FaceTrackerGUI(QWidget):
             self._terminate_click_bar()
 
     def _check_click_bar_status(self):
-        """외부에서 클릭바 창이 닫혔을 때 Home 토글만 해제 (Settings 영구 설정값은 보존)"""
+        """외부에서 클릭바 창이 닫히거나 무응답(Hang/Freeze) 상태일 때 감지 및 안전 복구"""
         import ctypes
         user32 = ctypes.windll.user32
         hwnd = user32.FindWindowW(None, "ClickBar")
         if not hwnd:
             hwnd = user32.FindWindowW(None, "Enable Viacam - ClickBar")
 
-        # 프로세스가 종료되었거나 창이 사라진 경우
+        # 1. 클릭바 창이 무응답(Hang/Freeze) 상태인지 검사
+        if hwnd and user32.IsHungAppWindow(hwnd):
+            print("[FaceTracker 경고] 머무름 클릭 바(ClickBar) 무응답(Hang) 감지! 마우스 안전 해제 및 프로세스 강제 정리 수행.")
+            self._terminate_click_bar()
+            if hasattr(self, 'click_bar_chk') and self.click_bar_chk.isChecked():
+                self.click_bar_chk.blockSignals(True)
+                self.click_bar_chk.setChecked(False)
+                self.click_bar_chk.blockSignals(False)
+            return
+
+        # 2. 프로세스가 종료되었거나 창이 사라진 경우
         is_running = False
         if self.click_bar_process is not None and self.click_bar_process.poll() is None:
             is_running = True

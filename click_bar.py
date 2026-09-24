@@ -122,7 +122,6 @@ DEFAULT_CONFIG = {
     "dwell_radius": 10,
     "auto_revert": True,
     "sound_enabled": True,
-    "visual_indicator": True,
     "dwell_on_bar": True,
     "always_on_top": True,
     "pos_x": 400,
@@ -153,93 +152,7 @@ def save_config(cfg):
         print(f"[설정 저장 오류]: {e}")
 
 # ========================================================
-# 1. 시각적 카운트다운 게이지 오버레이 (Dwell Indicator)
-# ========================================================
-class DwellIndicatorOverlay(QWidget):
-    """
-    커서 위치에 도넛형 원형 카운트다운 게이지를 표시하는 투명 오버레이 윈도우.
-    마우스 입력을 전혀 가로채지 않는(Click-through) 속성을 지닙니다.
-    """
-    def __init__(self):
-        super().__init__()
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool |
-            Qt.WindowType.WindowTransparentForInput
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
-        
-        self.setFixedSize(40, 40)
-        self.progress = 0.0  # 0.0 ~ 1.0
-        self.mode = "LEFT"
-        self.hide()
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        # Windows API로 마우스 클릭 완전 투과 설정
-        hwnd = self.winId()
-        style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOPMOST)
-
-    def set_progress(self, progress, x, y, mode="LEFT"):
-        self.progress = min(1.0, max(0.0, progress))
-        self.mode = mode
-        # 커서 중앙에 위치하도록 조정
-        self.move(int(x - self.width() / 2), int(y - self.height() / 2))
-        self.update()
-        if not self.isVisible():
-            self.show()
-
-    def paintEvent(self, event):
-        if self.progress <= 0.0:
-            return
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        center_x = self.width() / 2.0
-        center_y = self.height() / 2.0
-        radius = 14.0
-        rect = QRect(int(center_x - radius), int(center_y - radius), int(radius * 2), int(radius * 2))
-
-        # 1. 배경 가이드 링 (은은한 반투명 다크 링)
-        bg_pen = QPen(QColor(15, 23, 42, 160), 3)
-        bg_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(bg_pen)
-        painter.drawEllipse(rect)
-
-        # 2. 모드별 진행 색상 결정
-        if self.mode == "LEFT":
-            arc_color = QColor(14, 165, 233, 230)   # 스카이블루
-        elif self.mode == "DOUBLE":
-            arc_color = QColor(16, 185, 129, 230)  # 에메랄드 그린
-        elif self.mode == "DRAG":
-            arc_color = QColor(245, 158, 11, 230)  # 앰버 오렌지
-        elif self.mode == "RIGHT":
-            arc_color = QColor(168, 85, 247, 230)  # 퍼플
-        else:
-            arc_color = QColor(56, 189, 248, 230)
-
-        # 3. 진행도 게이지 아크 (12시 방향부터 시계방향 회전)
-        arc_pen = QPen(arc_color, 4)
-        arc_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(arc_pen)
-        
-        start_angle = 90 * 16
-        span_angle = -int(self.progress * 360 * 16)
-        painter.drawArc(rect, start_angle, span_angle)
-
-        # 4. 중심 앵커 점
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(arc_color))
-        painter.drawEllipse(QPoint(int(center_x), int(center_y)), 3, 3)
-
-# ========================================================
-# 2. 툴바 전용 커스텀 스타일 버튼
+# 1. 툴바 전용 커스텀 스타일 버튼
 # ========================================================
 class ClickBarButton(QPushButton):
     """
@@ -658,10 +571,6 @@ class ClickBarSetupDialog(QDialog):
         self.chk_sound.setChecked(self.cfg.get("sound_enabled", True))
         layout.addWidget(self.chk_sound)
 
-        self.chk_visual = QCheckBox("커서 주변 원형 카운트다운 게이지 표시")
-        self.chk_visual.setChecked(self.cfg.get("visual_indicator", True))
-        layout.addWidget(self.chk_visual)
-
         self.chk_dwell_bar = QCheckBox("클릭바 버튼 위에서도 머무름으로 선택 허용")
         self.chk_dwell_bar.setChecked(self.cfg.get("dwell_on_bar", True))
         layout.addWidget(self.chk_dwell_bar)
@@ -707,7 +616,6 @@ class ClickBarSetupDialog(QDialog):
         self.cfg["always_on_top"] = self.chk_topmost.isChecked()
         self.cfg["auto_revert"] = self.chk_revert.isChecked()
         self.cfg["sound_enabled"] = self.chk_sound.isChecked()
-        self.cfg["visual_indicator"] = self.chk_visual.isChecked()
         self.cfg["dwell_on_bar"] = self.chk_dwell_bar.isChecked()
         save_config(self.cfg)
         if self.on_save_callback:
@@ -758,10 +666,7 @@ class ClickBarWindow(QWidget):
         # 1. UI 툴바 레이아웃 구성
         self._init_ui()
 
-        # 2. 카운트다운 오버레이 생성
-        self.overlay = DwellIndicatorOverlay()
-
-        # 3. Dwell 감지 타이머 초기화 (25ms 주기 고속 감지)
+        # 2. Dwell 감지 타이머 초기화 (25ms 주기 고속 감지)
         self.last_cursor_x = -1
         self.last_cursor_y = -1
         self.dwell_anchor_x = -1
@@ -786,19 +691,20 @@ class ClickBarWindow(QWidget):
         if os.path.exists(ico_path):
             self.setWindowIcon(QIcon(ico_path))
 
-        # 4. 팟플레이어 등 다른 창의 최상위 전환 시 0ms 즉시 최상위 복구 실시간 훅 등록
+        # 3. 팟플레이어 등 다른 창의 최상위 전환 시 즉시 최상위 복구 실시간 훅 등록
         self._hook = None
         self._hook_c_proc = None
+        self._is_updating_topmost = False
         self._setup_foreground_hook()
 
-        # 5. 메모리 최적화: 초기 UI 렌더링 직후 및 60초 주기 자동 트림 (점유율 1~3MB대 유지)
+        # 4. 메모리 최적화: 초기 UI 렌더링 직후 및 60초 주기 자동 트림 (점유율 1~3MB대 유지)
         QTimer.singleShot(800, trim_process_memory)
         self.mem_trim_timer = QTimer(self)
         self.mem_trim_timer.timeout.connect(trim_process_memory)
         self.mem_trim_timer.start(60000)
 
     def _setup_foreground_hook(self):
-        """팟플레이어 등 다른 창이 최상위로 올라왔을 때 0ms 즉시 감지하여 클릭바를 최상단에 유지하는 실시간 훅"""
+        """다른 창이 최상위로 올라왔을 때 감지하여 클릭바를 최상단에 안전하게 유지하는 훅"""
         def hook_proc(hHook, event, hwnd, idObject, idChild, dwEventThread, dwmsEventTime):
             try:
                 if not self.cfg.get("always_on_top", True):
@@ -843,29 +749,23 @@ class ClickBarWindow(QWidget):
         prev = user32.GetWindow(hwnd, GW_HWNDPREV)
         if prev and user32.IsWindowVisible(prev):
             dlg_hwnd = self.setup_dialog.winId() if (self.setup_dialog and self.setup_dialog.isVisible()) else 0
-            ov_hwnd = self.overlay.winId() if (hasattr(self, 'overlay') and self.overlay and self.overlay.isVisible()) else 0
-            if prev != dlg_hwnd and prev != ov_hwnd:
+            if prev != dlg_hwnd:
                 return True
         return False
 
     def _ensure_topmost(self):
-        """클릭바 및 오버레이가 화면 최상단에 위치하도록 보장 (팟플레이어 등 다른 Topmost 창 경쟁 극복)"""
+        """클릭바가 화면 최상단에 위치하도록 보장 (Z-order 경쟁 극복 및 무한 루프 100% 방지)"""
         if not self.cfg.get("always_on_top", True) or not self.isVisible():
             return
-        hwnd = self.winId()
-        flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER
-
-        # Windows OS 특성상 이미 Topmost인 창은 단순 SetWindowPos(-1) 호출 시 Z-order 갱신이 무시됨.
-        # HWND_NOTOPMOST(-2)로 살짝 토글 후 즉시 HWND_TOPMOST(-1) 재등록 + BringWindowToTop 호출하여 강제 최상위 복귀
-        user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
-        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
-        user32.BringWindowToTop(hwnd)
-
-        if hasattr(self, 'overlay') and self.overlay and self.overlay.isVisible():
-            ov_hwnd = self.overlay.winId()
-            user32.SetWindowPos(ov_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
-            user32.SetWindowPos(ov_hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
-            user32.BringWindowToTop(ov_hwnd)
+        if self._is_updating_topmost:
+            return
+        self._is_updating_topmost = True
+        try:
+            hwnd = self.winId()
+            flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
+        finally:
+            self._is_updating_topmost = False
 
     def _apply_always_on_top(self, enabled):
         """
@@ -1024,8 +924,6 @@ class ClickBarWindow(QWidget):
         self.follow_offset_x = self.x() - cur_pos.x()
         self.follow_offset_y = self.y() - cur_pos.y()
         self.is_cooling_down = False
-        if hasattr(self, 'overlay') and self.overlay:
-            self.overlay.hide()
         if "MOVE" in self.buttons:
             self.buttons["MOVE"].is_active_mode = True
             self.buttons["MOVE"].update()
@@ -1162,8 +1060,6 @@ class ClickBarWindow(QWidget):
         """Windows OS 네이티브 창 이동을 시작하여 끊김 없이 100% 부드럽게 마우스 드래그 수행"""
         self.is_cooling_down = True
         self.cooldown_end_time = time.time() + 0.6
-        if hasattr(self, 'overlay') and self.overlay:
-            self.overlay.hide()
 
         hwnd = self.winId()
         user32.ReleaseCapture()
@@ -1200,155 +1096,130 @@ class ClickBarWindow(QWidget):
     # Dwell Click 감지 핵심 엔진 루프
     # ========================================================
     def _check_dwell_tick(self):
-        # 1. Qt의 전역 논리 좌표계(QPoint)로 커서 위치 획득 (High-DPI 배율 자동 보정)
-        cur_pos = QCursor.pos()
-        cur_x = cur_pos.x()
-        cur_y = cur_pos.y()
-        now = time.time()
+        try:
+            # 1. Qt의 전역 논리 좌표계(QPoint)로 커서 위치 획득 (High-DPI 배율 자동 보정)
+            cur_pos = QCursor.pos()
+            cur_x = cur_pos.x()
+            cur_y = cur_pos.y()
+            now = time.time()
 
-        # [최우선순위 보장] 항상 위 옵션이 켜져 있을 때 화면 최상단(HWND_TOPMOST) 유지
-        if self.cfg.get("always_on_top", True):
-            # 1) 다른 창이 내 위로 올라왔을 경우 지연 없이 즉각(0ms) 복구
-            # 2) 주기적 안전장치로 최소 0.2초마다 보장
-            if self._is_topmost_lost() or (now - self.last_topmost_check > 0.2):
-                self.last_topmost_check = now
-                self._ensure_topmost()
+            # [최우선순위 보장] 항상 위 옵션이 켜져 있을 때 화면 최상단(HWND_TOPMOST) 유지
+            if self.cfg.get("always_on_top", True):
+                # 1) 다른 창이 내 위로 올라왔을 경우 복구
+                # 2) 주기적 안전장치로 1.0초마다 보장 (과도한 윈도우 API 호출 방지)
+                if self._is_topmost_lost() or (now - self.last_topmost_check > 1.0):
+                    self.last_topmost_check = now
+                    self._ensure_topmost()
 
-        # 0. MOVE 버튼 따라오기(Follow Moving) 모드 동작 중일 때
-        if self.is_follow_moving:
-            # 1) 사용자가 이동 중 물리 마우스 클릭을 누르면 즉시 멈춤 (시작 0.4초 이후 감지)
-            if (now - self.follow_move_start_time > 0.4) and (user32.GetAsyncKeyState(0x01) & 0x8000):
-                self._stop_follow_moving()
+            # 0. MOVE 버튼 따라오기(Follow Moving) 모드 동작 중일 때
+            if self.is_follow_moving:
+                # 1) 사용자가 이동 중 물리 마우스 클릭을 누르면 즉시 멈춤 (시작 0.4초 이후 감지)
+                if (now - self.follow_move_start_time > 0.4) and (user32.GetAsyncKeyState(0x01) & 0x8000):
+                    self._stop_follow_moving()
+                    return
+
+                new_x = cur_x + self.follow_offset_x
+                new_y = cur_y + self.follow_offset_y
+                screen = QApplication.primaryScreen().availableGeometry()
+                nx = max(screen.left(), min(new_x, screen.right() - self.width()))
+                ny = max(screen.top(), min(new_y, screen.bottom() - self.height()))
+                self.move(nx, ny)
+
+                # 2) 시작 직후 0.6초간은 원하는 새 위치로 이동할 수 있도록 Dwell 자동 고정 유예
+                if now - self.follow_move_start_time < 0.6:
+                    self.dwell_anchor_x = cur_x
+                    self.dwell_anchor_y = cur_y
+                    self.dwell_start_time = now
+                    return
+
+                # 3) 헤드 마우스 사용자가 원하는 위치에 마우스를 잠깐 멈추면(Dwell) 자동 고정
+                dist_from_anchor = ((cur_x - self.dwell_anchor_x)**2 + (cur_y - self.dwell_anchor_y)**2)**0.5
+                if dist_from_anchor > self.cfg.get("dwell_radius", 10):
+                    self.dwell_anchor_x = cur_x
+                    self.dwell_anchor_y = cur_y
+                    self.dwell_start_time = now
+                else:
+                    elapsed = now - self.dwell_start_time
+                    dwell_time = max(0.3, self.cfg.get("dwell_time", 0.8))
+                    if elapsed >= dwell_time:
+                        self._stop_follow_moving()
                 return
 
-            new_x = cur_x + self.follow_offset_x
-            new_y = cur_y + self.follow_offset_y
-            screen = QApplication.primaryScreen().availableGeometry()
-            nx = max(screen.left(), min(new_x, screen.right() - self.width()))
-            ny = max(screen.top(), min(new_y, screen.bottom() - self.height()))
-            self.move(nx, ny)
+            # 1. 커서가 이전에 클릭했던 앵커 반경을 벗어났는지 확인 (쿨다운 해제)
+            if self.is_cooling_down:
+                if now < self.cooldown_end_time:
+                    return
+                dist = ((cur_x - self.dwell_anchor_x)**2 + (cur_y - self.dwell_anchor_y)**2)**0.5
+                if dist > self.cfg.get("dwell_radius", 10):
+                    self.is_cooling_down = False
+                    self.dwell_anchor_x = cur_x
+                    self.dwell_anchor_y = cur_y
+                    self.dwell_start_time = now
+                else:
+                    return
 
-            # 2) 시작 직후 0.6초간은 원하는 새 위치로 이동할 수 있도록 Dwell 자동 고정 유예
-            if now - self.follow_move_start_time < 0.6:
-                self.dwell_anchor_x = cur_x
-                self.dwell_anchor_y = cur_y
-                self.dwell_start_time = now
-                self.overlay.hide()
-                return
-
-            # 3) 헤드 마우스 사용자가 원하는 위치에 마우스를 잠깐 멈추면(Dwell) 자동 고정
+            # 2. 커서 이동량 검사 (떨림 방지 반경)
             dist_from_anchor = ((cur_x - self.dwell_anchor_x)**2 + (cur_y - self.dwell_anchor_y)**2)**0.5
             if dist_from_anchor > self.cfg.get("dwell_radius", 10):
+                # 사용자가 새 위치로 이동 중
                 self.dwell_anchor_x = cur_x
                 self.dwell_anchor_y = cur_y
                 self.dwell_start_time = now
-                self.overlay.hide()
-            else:
-                elapsed = now - self.dwell_start_time
-                dwell_time = max(0.3, self.cfg.get("dwell_time", 0.8))
-                if elapsed > 0.05 and self.cfg.get("visual_indicator", True):
-                    self.overlay.set_progress(min(1.0, elapsed / dwell_time), cur_x, cur_y, "MOVE")
-                if elapsed >= dwell_time:
-                    self.overlay.hide()
-                    self._stop_follow_moving()
-            return
-
-        # 1. 커서가 이전에 클릭했던 앵커 반경을 벗어났는지 확인 (쿨다운 해제)
-        if self.is_cooling_down:
-            if now < self.cooldown_end_time:
-                self.overlay.hide()
-                return
-            dist = ((cur_x - self.dwell_anchor_x)**2 + (cur_y - self.dwell_anchor_y)**2)**0.5
-            if dist > self.cfg.get("dwell_radius", 10):
-                self.is_cooling_down = False
-                self.dwell_anchor_x = cur_x
-                self.dwell_anchor_y = cur_y
-                self.dwell_start_time = now
-            else:
-                self.overlay.hide()
                 return
 
-        # 2. 커서 이동량 검사 (떨림 방지 반경)
-        dist_from_anchor = ((cur_x - self.dwell_anchor_x)**2 + (cur_y - self.dwell_anchor_y)**2)**0.5
-        if dist_from_anchor > self.cfg.get("dwell_radius", 10):
-            # 사용자가 새 위치로 이동 중
-            self.dwell_anchor_x = cur_x
-            self.dwell_anchor_y = cur_y
-            self.dwell_start_time = now
-            self.overlay.hide()
-            return
+            # 3. 커서 위치 판별 (Qt 논리 좌표계 기준)
+            # 3-1. 클릭바 프레임 영역 내부인지 확인
+            frame_pos = self.frame.mapToGlobal(QPoint(0, 0))
+            frame_rect = QRect(frame_pos, self.frame.size())
+            is_on_bar = frame_rect.contains(cur_pos) or self.frameGeometry().contains(cur_pos)
 
-        # 3. 커서 위치 판별 (Qt 논리 좌표계 기준)
-        # 3-1. 클릭바 프레임 영역 내부인지 확인
-        frame_pos = self.frame.mapToGlobal(QPoint(0, 0))
-        frame_rect = QRect(frame_pos, self.frame.size())
-        is_on_bar = frame_rect.contains(cur_pos) or self.frameGeometry().contains(cur_pos)
-
-        # 3-2. 정확히 어떤 버튼 위에 커서가 있는지 확인 (바 위에 있을 때만 조회하여 CPU/메모리 부하 절감)
-        if is_on_bar:
-            target_btn_key, target_btn = self._get_button_under_cursor(cur_pos)
-        else:
-            target_btn_key, target_btn = None, None
-
-        # 3-3. 설정창 위인지 확인
-        is_on_setup = False
-        if self.setup_dialog and self.setup_dialog.isVisible():
-            is_on_setup = self.setup_dialog.geometry().contains(cur_pos)
-
-        # 4. 커서가 멈춰 있는 시간 계산 (최소 0.1초 Dwell 완벽 수용: max 0.05s)
-        elapsed = now - self.dwell_start_time
-        base_dwell = max(0.05, self.cfg.get("dwell_time", 0.8))
-
-        # 툴바 버튼을 바꿀 때는 오작동을 방지하기 위해 최소 0.25초 보장, 일반 영역은 사용자 지정값(최소 0.1초) 적용
-        target_dwell = max(0.25, base_dwell * 1.3) if is_on_bar else base_dwell
-        progress = min(1.0, elapsed / target_dwell)
-
-        # 시각적 인디케이터 표시
-        # 툴바 위에서는 정확히 버튼 위에 있을 때만 표시 (버튼 사이 여백 등에서는 표시하지 않음)
-        should_show_overlay = self.cfg.get("visual_indicator", True) and (elapsed > 0.05)
-        if is_on_bar:
-            if not target_btn_key or not self.cfg.get("dwell_on_bar", True):
-                should_show_overlay = False
-        elif not is_on_setup and not self.cfg.get("active", True):
-            should_show_overlay = False
-
-        if should_show_overlay:
-            if target_btn_key:
-                overlay_mode = target_btn_key
-            elif self.is_dragging_mouse:
-                overlay_mode = "DRAG"
-            else:
-                overlay_mode = self.cfg.get("current_mode", "LEFT")
-            self.overlay.set_progress(progress, cur_x, cur_y, overlay_mode)
-        else:
-            self.overlay.hide()
-
-        # 5. 머무름 시간 도달 시 클릭 트리거!
-        if elapsed >= target_dwell:
-            self.overlay.hide()
-            self.is_cooling_down = True
-            self.cooldown_end_time = now + 0.35  # 안전 쿨다운
-
-            # 핵심 보호 1: 마우스 드래그 중인 경우
-            # 커서가 어디에 있든 '드롭 완료(LEFTUP)'만 안전하게 수행
-            if self.is_dragging_mouse:
-                if now - self.drag_mouse_start_time >= 0.35:
-                    self._trigger_mouse_action(cur_x, cur_y)
-                return
-
-            # [최우선 판별]
-            # 1순위: 클릭바 툴바 위에서의 머무름 처리
-            # 툴바 영역 내에서는 절대 OS 마우스 클릭(mouse_event)이 호출되지 않도록 완전 차단!
+            # 3-2. 정확히 어떤 버튼 위에 커서가 있는지 확인 (바 위에 있을 때만 조회하여 CPU/메모리 부하 절감)
             if is_on_bar:
-                if self.cfg.get("dwell_on_bar", True) and target_btn_key:
-                    self._on_button_clicked(target_btn_key)
-            # 2순위: 설정창 위에서의 머무름 처리 (헤드마우스 사용자를 위한 위젯 직접 조작)
-            elif is_on_setup:
-                self._trigger_dialog_dwell(cur_x, cur_y)
-            # 3순위: 일반 화면 및 다른 윈도우 창 위에서의 머무름 클릭 처리 (ON 상태일 때)
+                target_btn_key, target_btn = self._get_button_under_cursor(cur_pos)
             else:
-                if self.cfg.get("active", True):
-                    self._trigger_mouse_action(cur_x, cur_y)
+                target_btn_key, target_btn = None, None
+
+            # 3-3. 설정창 위인지 확인
+            is_on_setup = False
+            if self.setup_dialog and self.setup_dialog.isVisible():
+                is_on_setup = self.setup_dialog.geometry().contains(cur_pos)
+
+            # 4. 커서가 멈춰 있는 시간 계산 (최소 0.1초 Dwell 완벽 수용: max 0.05s)
+            elapsed = now - self.dwell_start_time
+            base_dwell = max(0.05, self.cfg.get("dwell_time", 0.8))
+
+            # 툴바 버튼을 바꿀 때는 오작동을 방지하기 위해 최소 0.25초 보장, 일반 영역은 사용자 지정값(최소 0.1초) 적용
+            target_dwell = max(0.25, base_dwell * 1.3) if is_on_bar else base_dwell
+
+            # 5. 머무름 시간 도달 시 클릭 트리거!
+            if elapsed >= target_dwell:
+                self.is_cooling_down = True
+                self.cooldown_end_time = now + 0.35  # 안전 쿨다운
+
+                # 핵심 보호 1: 마우스 드래그 중인 경우
+                # 커서가 어디에 있든 '드롭 완료(LEFTUP)'만 안전하게 수행
+                if self.is_dragging_mouse:
+                    if now - self.drag_mouse_start_time >= 0.35:
+                        self._trigger_mouse_action(cur_x, cur_y)
+                    return
+
+                # [최우선 판별]
+                # 1순위: 클릭바 툴바 위에서의 머무름 처리
+                # 툴바 영역 내에서는 절대 OS 마우스 클릭(mouse_event)이 호출되지 않도록 완전 차단!
+                if is_on_bar:
+                    if self.cfg.get("dwell_on_bar", True) and target_btn_key:
+                        self._on_button_clicked(target_btn_key)
+                # 2순위: 설정창 위에서의 머무름 처리 (헤드마우스 사용자를 위한 위젯 직접 조작)
+                elif is_on_setup:
+                    self._trigger_dialog_dwell(cur_x, cur_y)
+                # 3순위: 일반 화면 및 다른 윈도우 창 위에서의 머무름 클릭 처리 (ON 상태일 때)
+                else:
+                    if self.cfg.get("active", True):
+                        self._trigger_mouse_action(cur_x, cur_y)
+        except Exception as e:
+            print(f"[ClickBar 예외 방어] Dwell 감지 틱 예외: {e}")
+            self.dwell_start_time = time.time()
+            self.is_cooling_down = False
 
     def _trigger_dialog_dwell(self, gx, gy):
         """설정창 위에서 머물렀을 때 내부 위젯(저장/취소 버튼, 체크박스, 슬라이더)을 100% 확실하게 조작"""
@@ -1467,13 +1338,11 @@ class ClickBarWindow(QWidget):
             except Exception:
                 pass
             self._hook = None
-        # 종료 시 오버레이 및 타이머 해제
+        # 종료 시 드래그 및 타이머 해제
         self._release_drag()
         self.dwell_timer.stop()
         if hasattr(self, 'mem_trim_timer') and self.mem_trim_timer:
             self.mem_trim_timer.stop()
-        if self.overlay:
-            self.overlay.close()
         event.accept()
         app = QApplication.instance()
         if app:

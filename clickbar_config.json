@@ -5,7 +5,6 @@
   "dwell_radius": 20,
   "auto_revert": true,
   "sound_enabled": false,
-  "visual_indicator": false,
   "dwell_on_bar": true,
   "always_on_top": true,
   "pos_x": 1149,
