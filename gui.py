@@ -16,7 +16,8 @@ import config
 from pynput import keyboard  # type: ignore
 
 REG_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-REG_APP_NAME = "EnableViaCam_FaceTracker"
+REG_APP_NAME = "FaceTracker"
+OLD_REG_APP_NAME = "EnableViaCam_FaceTracker"
 
 def is_standalone_exe() -> bool:
     """현재 프로세스가 Nuitka/PyInstaller 등으로 컴파일된 독립 실행 파일인지 여부"""
@@ -44,8 +45,14 @@ def is_auto_start_windows_registered() -> bool:
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_KEY, 0, winreg.KEY_READ) as key:
-            val, _ = winreg.QueryValueEx(key, REG_APP_NAME)
-            return bool(val)
+            for name in (REG_APP_NAME, OLD_REG_APP_NAME):
+                try:
+                    val, _ = winreg.QueryValueEx(key, name)
+                    if val:
+                        return True
+                except FileNotFoundError:
+                    pass
+        return False
     except Exception:
         return False
 
@@ -57,13 +64,19 @@ def set_auto_start_windows(enable: bool) -> bool:
             if enable:
                 cmd = get_expected_auto_start_cmd()
                 winreg.SetValueEx(key, REG_APP_NAME, 0, winreg.REG_SZ, cmd)
-                print(f"[FaceTracker] 윈도우 시작 프로그램 레지스트리 등록 완료: {cmd}")
-            else:
+                # 이전 등록 키가 남아있으면 정리
                 try:
-                    winreg.DeleteValue(key, REG_APP_NAME)
-                    print("[FaceTracker] 윈도우 시작 프로그램 레지스트리 삭제 완료")
+                    winreg.DeleteValue(key, OLD_REG_APP_NAME)
                 except FileNotFoundError:
                     pass
+                print(f"[FaceTracker] 윈도우 시작 프로그램 레지스트리 등록 완료: {cmd}")
+            else:
+                for name in (REG_APP_NAME, OLD_REG_APP_NAME):
+                    try:
+                        winreg.DeleteValue(key, name)
+                    except FileNotFoundError:
+                        pass
+                print("[FaceTracker] 윈도우 시작 프로그램 레지스트리 삭제 완료")
         return True
     except Exception as e:
         print(f"[시작프로그램 레지스트리 오류]: {e}")

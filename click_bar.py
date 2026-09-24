@@ -1489,7 +1489,7 @@ def main():
     global _clickbar_mutex
     # 1. 단일 인스턴스 보장 (Single Instance Guard): 이미 실행 중이면 기존 창 활성화 후 즉시 종료
     ERROR_ALREADY_EXISTS = 183
-    _clickbar_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\EnableViaCam_ClickBar_SingleInstance_Mutex")
+    _clickbar_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\FaceTracker_ClickBar_SingleInstance_Mutex")
     if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
         # 이미 실행 중인 클릭바 창이 있으면 최상위로 띄우고 종료
         hwnd = ctypes.windll.user32.FindWindowW(None, "ClickBar")
@@ -1502,7 +1502,7 @@ def main():
 
     try:
         # Windows 작업 표시줄에서 독립된 앱 아이콘으로 분리 표시되도록 AppUserModelID 등록
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("EnableViaCam.ClickBar")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("FaceTracker.ClickBar")
     except Exception:
         pass
 
