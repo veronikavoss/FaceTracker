@@ -5,6 +5,7 @@ import time
 import ctypes
 from ctypes import wintypes
 import threading
+from typing import Any
 
 def play_sound(freq, duration):
     """GUI 스레드 지연을 방지하는 백그라운드 비동기 비프음 재생"""
