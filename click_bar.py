@@ -5,7 +5,6 @@ import time
 import ctypes
 from ctypes import wintypes
 import threading
-from typing import Any
 
 def play_sound(freq, duration):
     """GUI 스레드 지연을 방지하는 백그라운드 비동기 비프음 재생"""
@@ -42,8 +41,6 @@ user32 = ctypes.windll.user32
 GWL_EXSTYLE = -20
 WS_EX_NOACTIVATE = 0x08000000
 WS_EX_TOPMOST = 0x00000008
-WS_EX_TRANSPARENT = 0x00000020
-WS_EX_LAYERED = 0x00080000
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_APPWINDOW = 0x00040000
 
@@ -75,9 +72,6 @@ WINEVENTPROC = ctypes.WINFUNCTYPE(
     wintypes.DWORD,
     wintypes.DWORD
 )
-
-class POINT(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
 
 kernel32 = ctypes.windll.kernel32
 kernel32.SetProcessWorkingSetSize.argtypes = [wintypes.HANDLE, ctypes.c_size_t, ctypes.c_size_t]
@@ -788,13 +782,6 @@ class ClickBarWindow(QWidget):
         style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
         style = (style | WS_EX_APPWINDOW | WS_EX_NOACTIVATE) & ~WS_EX_TOOLWINDOW
 
-        HWND_TOPMOST = -1
-        HWND_NOTOPMOST = -2
-        SWP_NOSIZE = 0x0001
-        SWP_NOMOVE = 0x0002
-        SWP_NOACTIVATE = 0x0010
-        SWP_FRAMECHANGED = 0x0020
-        SWP_SHOWWINDOW = 0x0040
         swp_flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW
 
         if enabled:
