@@ -238,17 +238,7 @@ class FaceTracker(threading.Thread):
 
     def set_tracking(self, enabled):
         self.tracking_enabled = enabled
-        if enabled:
-            try:
-                # 윈도우 부팅 시 또는 마우스 유휴 시 OS가 커서를 숨겨두는 현상을 즉각 해제
-                user32 = ctypes.windll.user32
-                user32.SystemParametersInfoW(0x0057, 0, None, 0)
-                user32.mouse_event(0x0001, 1, 0, 0, 0)
-                user32.mouse_event(0x0001, -1, 0, 0, 0)
-                user32.ShowCursor(True)
-            except Exception:
-                pass
-        else:
+        if not enabled:
             self.reset_tracking_state()
 
     def reset_tracking_state(self):
