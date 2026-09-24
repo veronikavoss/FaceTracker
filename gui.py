@@ -1638,15 +1638,28 @@ class FaceTrackerGUI(QWidget):
 
     def _terminate_click_bar(self):
         """체크 해제 시 실행 중인 클릭바 프로세스 및 창을 즉시 완벽하게 종료"""
-        # 1. 프로세스 핸들 종료 (Windows taskkill /T /F로 자식 프로세스 트리까지 100% 완전 사살)
+        import ctypes
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        WM_CLOSE = 0x0010
+        PROCESS_TERMINATE = 0x0001
+
+        # 1. 실행 중인 클릭바 창에 Win32 WM_CLOSE 메시지 전송 (정상적이고 안전한 종료 유도)
+        try:
+            for title in ["ClickBar", "Enable Viacam - ClickBar"]:
+                hwnd = user32.FindWindowW(None, title)
+                if hwnd:
+                    user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+        except Exception:
+            pass
+
+        # 2. 관리 중인 서브프로세스 핸들이 있는 경우 대기 후 종료 (외부 taskkill.exe 호출 배제)
+        #    * 중요: Windows 시스템 종료(Shutdown) 시 외부 프로세스(taskkill.exe)를 실행하면
+        #      세션 종료 상태로 인해 DLL 초기화 실패(0xc0000142) 오류창이 발생하므로
+        #      외부 바이너리 호출을 일절 배제하고 순수 커널 API(TerminateProcess)만을 사용하여 0.001초 만에 안전 종료합니다.
         if self.click_bar_process is not None:
-            pid = self.click_bar_process.pid
             try:
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", str(pid)],
-                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
-                    timeout=2.0
-                )
+                self.click_bar_process.wait(timeout=0.2)
             except Exception:
                 try:
                     self.click_bar_process.kill()
@@ -1654,15 +1667,18 @@ class FaceTrackerGUI(QWidget):
                     pass
             self.click_bar_process = None
 
-        # 2. 잔여 창 및 외부 단독 실행 클릭바 창까지 Win32 WM_CLOSE 메시지로 깨끗이 종료
+        # 3. 만약 외부에서 단독 실행된 잔여 창이 여전히 남아있다면 강제 정리
         try:
-            import ctypes
-            user32 = ctypes.windll.user32
-            WM_CLOSE = 0x0010
             for title in ["ClickBar", "Enable Viacam - ClickBar"]:
                 hwnd = user32.FindWindowW(None, title)
                 if hwnd:
-                    user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+                    pid = ctypes.c_ulong()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                    if pid.value > 0:
+                        h_proc = kernel32.OpenProcess(PROCESS_TERMINATE, False, pid.value)
+                        if h_proc:
+                            kernel32.TerminateProcess(h_proc, 0)
+                            kernel32.CloseHandle(h_proc)
         except Exception:
             pass
 

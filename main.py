@@ -56,8 +56,33 @@ class NativeMouseController:
         self.accum_x = 0.0
         self.accum_y = 0.0
         self.pt = POINT()
+        self.cursor_woken = False
+        self.ensure_cursor_visible()
+
+    def ensure_cursor_visible(self):
+        """
+        Windows 부팅 직후 또는 마우스 물리 하드웨어 미접촉/터치 상태에서 OS(DWM)가 커서를 숨김(Invisible)
+        상태로 유지하는 현상을 즉각 해제하고 화면에 마우스 포인터 그래픽을 강제로 표시합니다.
+        """
+        try:
+            # 1. Windows 시스템 커서 체계 즉각 갱신 및 재로드 (SPI_SETCURSORS = 0x0057)
+            self.user32.SystemParametersInfoW(0x0057, 0, None, 0)
+            
+            # 2. Windows 입력 하위 시스템(OS Input Stream)에 하드웨어 레벨 마우스 미세 이동 패킷 주입
+            #    (SetCursorPos만 호출 시 OS가 커서를 깨우지 않지만, mouse_event는 커서를 즉시 화면에 강제 표시)
+            self.user32.mouse_event(0x0001, 1, 0, 0, 0)   # dx = +1
+            self.user32.mouse_event(0x0001, -1, 0, 0, 0)  # dx = -1 (원위치 복귀)
+            
+            # 3. 현재 스레드의 커서 가시성 카운터 보장
+            self.user32.ShowCursor(True)
+            self.cursor_woken = True
+        except Exception:
+            pass
 
     def move(self, dx, dy):
+        if not self.cursor_woken:
+            self.ensure_cursor_visible()
+
         self.accum_x += dx
         self.accum_y += dy
         
@@ -72,6 +97,10 @@ class NativeMouseController:
                 new_x = self.pt.x + move_x
                 new_y = self.pt.y + move_y
                 self.user32.SetCursorPos(new_x, new_y)
+                # 마우스 이동 이벤트(dx=0, dy=0)를 OS 입력 스트림에 주입하여
+                # 윈도우 OS가 커서 가시성(Visibility)을 상시 유지하고, 
+                # 커서 아래 위치한 윈도우 컨트롤들에 WM_MOUSEMOVE를 정상 통지하도록 보장
+                self.user32.mouse_event(0x0001, 0, 0, 0, 0)
 
 # 초고속 네이티브 마우스 컨트롤러 초기화
 mouse = NativeMouseController()
@@ -141,6 +170,8 @@ def main():
             if key_name == toggle_key_str and tracker:
                 new_state = not tracker.tracking_enabled
                 tracker.set_tracking(new_state)
+                if new_state:
+                    mouse.ensure_cursor_visible()
                 gui.tracking_toggled_signal.emit(new_state)
         except Exception:
             pass
@@ -206,7 +237,7 @@ def main():
     # 8. 애플리케이션 종료 시 하드웨어 자원 완전 해제 훅 등록
     def clean_up():
         try:
-            if gui:
+            if gui and gui.config.get("close_clickbar_on_exit", True):
                 gui._terminate_click_bar()
             if watchdog_timer:
                 watchdog_timer.stop()
@@ -225,8 +256,11 @@ def main():
     # 트래커 백그라운드 스레드 시작
     tracker.start_tracker()
     
-    # 9. 초기 구동 직후 메모리 최적화:
-    # 카메라 연결 및 UI 초기 렌더링 완료 후 2.5초 시점에 초기 작업 세트 메모리를 즉시 OS에 반환 (150MB+ -> 수십 MB 절감)
+    # 9. 초기 구동 직후 메모리 최적화 및 Windows 부팅 시 커서 즉각 활성화:
+    # Windows 시작 시 마우스 미접촉으로 인해 OS가 커서를 숨김 상태로 두는 문제를 해결하기 위해
+    # 앱 시작 직후 및 윈도우 셸(DWM) 로드 완료 시점에 커서 가시성을 즉각 깨웁니다.
+    QTimer.singleShot(1000, mouse.ensure_cursor_visible)
+    QTimer.singleShot(3000, mouse.ensure_cursor_visible)
     QTimer.singleShot(2500, config.trim_process_memory)
 
     # Qt 메인 이벤트 루프 시작
