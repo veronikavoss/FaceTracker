@@ -601,9 +601,24 @@ class FaceTracker(threading.Thread):
                                 raw_dx = cur_x - prev_pt_x
                                 raw_dy = cur_y - prev_pt_y
                                 
-                                if illumination_shock or abs(raw_dx) > spike_th or abs(raw_dy) > spike_th:
+                                # 얼굴 영역 이탈 검사 (광학 흐름이 얼굴 경계 밖으로 튕겨 나가는 이상 현상 감지)
+                                is_outside_face = False
+                                if self.face_rect is not None:
+                                    fx, fy, fw, fh = self.face_rect
+                                    margin_w = fw * 0.1
+                                    margin_h = fh * 0.1
+                                    if not (fx - margin_w <= cur_x <= fx + fw + margin_w and fy - margin_h <= cur_y <= fy + fh + margin_h):
+                                        is_outside_face = True
+
+                                # [추천 2: 스파이크 좌표 롤백 알고리즘]
+                                # 조도 급변 충격이나 스파이크 노이즈 발생 시 마우스 이동량(raw_dx, raw_dy)을 무효화할 뿐만 아니라,
+                                # 추적 좌표(cur_x, cur_y)도 직전 정상 위치(prev_pt_x, prev_pt_y)로 즉시 롤백하여
+                                # 추적 앵커가 엉뚱한 위치로 튀거나 다음 프레임에서 연쇄 튐이 일어나는 현상을 100% 방지합니다.
+                                if illumination_shock or abs(raw_dx) > spike_th or abs(raw_dy) > spike_th or is_outside_face:
                                     raw_dx = 0.0
                                     raw_dy = 0.0
+                                    cur_x = prev_pt_x
+                                    cur_y = prev_pt_y
                                     self.yunet_filter.reset()
                                 
                                 # 2. 마우스 스무딩 필터 적용 및 디스패치
