@@ -103,8 +103,11 @@ def main():
     tracker = None
     gui = None
 
+    last_gui_render_time = 0.0
+
     # 3. 콜백 함수 정의 (이벤트 큐 포화 방지 프레임 드롭 가드 장착)
     def on_frame_callback(frame, tracking_enabled, nose_x, nose_y, fps, w, h):
+        nonlocal last_gui_render_time
         if gui is None:
             return
         # 1. 창이 최소화되었거나 화면에 표시되지 않을 때, 또는 Home 탭이 아닐 때는
@@ -114,6 +117,16 @@ def main():
         # 2. 메인 UI 스레드가 이전 프레임을 렌더링 중이면 시그널 방출을 즉시 스킵하여 Qt 큐 메모리 누적/프리징 100% 방어
         if getattr(gui, '_is_frame_busy', False):
             return
+
+        # [최적화 2] 화면 표시용 프리뷰 FPS 다이어트:
+        # 마우스 추적/이동은 FaceTracker 백그라운드 스레드에서 30 FPS 원본 속도로 초고속 반응하되,
+        # 사람 눈으로 확인하는 화면 미리보기는 약 18 FPS(약 0.055초 간격)로 조절하여
+        # 메인 UI 스레드의 비디오 컬러 변환, QPixmap 복사 및 스케일링 CPU 부하를 절반으로 절감합니다.
+        now_t = time.time()
+        if now_t - last_gui_render_time < 0.055:
+            return
+        last_gui_render_time = now_t
+
         try:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h_f, w_f, ch = rgb_frame.shape

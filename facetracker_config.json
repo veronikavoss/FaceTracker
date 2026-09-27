@@ -22,7 +22,7 @@
             "acceleration": 5,
             "correction_interval": 5,
             "illumination_threshold": 10.0,
-            "spike_threshold": 15.0
+            "spike_threshold": 5.0
         },
         "my profile": {
             "sensitivity_x": 27,
