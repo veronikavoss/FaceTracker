@@ -339,8 +339,10 @@ class FaceTracker(threading.Thread):
                     candidates.sort(key=lambda c: c[0])
                     best_face = candidates[0][1]
                 else:
-                    # 기존 타깃 범위 내에 일치하는 얼굴이 없음 (타인으로 점프하지 않고 보호)
-                    return None
+                    # [베개/침대 갇힘 방어 긴급 탈출]
+                    # prior_pos(기존 추적점)가 베개, 침대 등 엉뚱한 배경으로 튀어 얼굴 반경을 벗어났을 때,
+                    # 멍하니 배경에 갇히지 않고 화면 중앙 우선 가중치로 실제 사용자 얼굴을 찾아 정상 코끝으로 복귀!
+                    pass
 
             # 2. 최초 감지 또는 재탐색 시점: 화면 중앙 우선 가중치 (Center-Weighted Priority)
             if best_face is None:
@@ -602,20 +604,26 @@ class FaceTracker(threading.Thread):
                                 raw_dx = cur_x - prev_pt_x
                                 raw_dy = cur_y - prev_pt_y
                                 
-                                # 얼굴 영역 이탈 검사 (광학 흐름이 얼굴 경계 밖으로 튕겨 나가는 이상 현상 감지)
+                                # [원칙 1: 얼굴 박스 하드 바운더리 클램프 (Hard Boundary Clamp)]
+                                # 사용자의 얼굴 경계 박스(self.face_rect)를 1픽셀도 벗어나지 못하도록 강제 차단합니다.
                                 is_outside_face = False
                                 if self.face_rect is not None:
                                     fx, fy, fw, fh = self.face_rect
-                                    margin_w = fw * 0.1
-                                    margin_h = fh * 0.1
-                                    if not (fx - margin_w <= cur_x <= fx + fw + margin_w and fy - margin_h <= cur_y <= fy + fh + margin_h):
+                                    if not (fx <= cur_x <= fx + fw and fy <= cur_y <= fy + fh):
                                         is_outside_face = True
 
-                                # [추천 2: 스파이크 좌표 롤백 알고리즘]
-                                # 조도 급변 충격이나 스파이크 노이즈 발생 시 마우스 이동량(raw_dx, raw_dy)을 무효화할 뿐만 아니라,
-                                # 추적 좌표(cur_x, cur_y)도 직전 정상 위치(prev_pt_x, prev_pt_y)로 즉시 롤백하여
-                                # 추적 앵커가 엉뚱한 위치로 튀거나 다음 프레임에서 연쇄 튐이 일어나는 현상을 100% 방지합니다.
-                                if illumination_shock or abs(raw_dx) > spike_th or abs(raw_dy) > spike_th or is_outside_face:
+                                # [스파이크 노이즈 차단 및 얼굴 영역 이탈 즉각 복구]
+                                if is_outside_face:
+                                    # 광학 흐름이 얼굴 박스 바깥(베개, 침대, 배경)으로 튕겨 나갔을 경우
+                                    # 마우스 이동을 즉시 0으로 차단하고 얼굴 내부(경계 안쪽)로 강제 클램핑
+                                    raw_dx = 0.0
+                                    raw_dy = 0.0
+                                    if self.face_rect is not None:
+                                        fx, fy, fw, fh = self.face_rect
+                                        cur_x = float(np.clip(cur_x, fx + 5.0, fx + fw - 5.0))
+                                        cur_y = float(np.clip(cur_y, fy + 5.0, fy + fh - 5.0))
+                                    self.yunet_filter.reset()
+                                elif illumination_shock or abs(raw_dx) > spike_th or abs(raw_dy) > spike_th:
                                     raw_dx = 0.0
                                     raw_dy = 0.0
                                     cur_x = prev_pt_x
@@ -656,6 +664,10 @@ class FaceTracker(threading.Thread):
                                         
                                         dist_to_nose = np.sqrt((cur_x - nx)**2 + (cur_y - ny)**2)
                                         
+                                        # [원칙 2: 코끝 안전 목줄(Leash) 및 즉각 스냅 원칙]
+                                        # 광학 흐름 추적점(cur_x, cur_y)이 신경망이 측정한 실제 코끝(nx, ny)으로부터
+                                        # 일정 거리(얼굴 폭의 20% 또는 6px) 이상 멀어지는 순간 즉각 100% 코끝으로 강제 스냅 복귀
+                                        max_leash = max(6.0, fw_sm * 0.20)
                                         if dist_to_nose > 6.0:
                                             cur_x = nx
                                             cur_y = ny
