@@ -60,7 +60,11 @@ def run_build():
     ]
 
     t0 = time.time()
-    ret_ft = subprocess.run(cmd_ft, cwd=base_dir)
+    env = os.environ.copy()
+    env["OPENBLAS_NUM_THREADS"] = "1"
+    env["OMP_NUM_THREADS"] = "1"
+    env["MKL_NUM_THREADS"] = "1"
+    ret_ft = subprocess.run(cmd_ft, cwd=base_dir, env=env)
     if ret_ft.returncode != 0:
         print(f"[오류] FaceTracker Nuitka 컴파일 실패 (종료 코드: {ret_ft.returncode})")
         sys.exit(ret_ft.returncode)
