@@ -41,40 +41,20 @@ sys.excepthook = global_exception_handler
 import ctypes
 from PySide6.QtCore import QTimer
 
-class POINT(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
-
 class NativeMouseController:
     """
-    Win32 User32.dll GetCursorPos / SetCursorPos를 직접 호출하는 초고속 순수 픽셀 마우스 컨트롤러.
-    Windows OS의 '마우스 가속도'나 '포인터 정확도 향상'으로 인한 속도 뻥튀기 왜곡이 전혀 없으며,
-    eViacam 알고리즘이 계산한 정확한 픽셀 단위로만 이동합니다.
-    지연(Latency)이나 관성(Inertia) 없이 프레임 수신 즉시 1:1로 반응합니다.
+    Win32 User32.dll mouse_event(MOUSEEVENTF_MOVE)를 호출하는 네이티브 마우스 컨트롤러.
+    SetCursorPos와 달리 Windows OS 입력 서브시스템(Input Subsystem)으로 실제 마우스 이동 이벤트를 직접 주입하여:
+    1) 작업 표시줄(Taskbar) 앱 아이콘 순서 변경 드래그,
+    2) 캡처 도구(Snipping Tool / ScreenClippingHost) 영역 지정 사각형 드래그,
+    3) 파일 탐색기/웹 브라우저의 드래그 앤 드롭을 100% 네이티브로 완벽 지원합니다 (eViacam과 동일 원리).
     """
     def __init__(self):
         self.user32 = ctypes.windll.user32
         self.accum_x = 0.0
         self.accum_y = 0.0
-        self.pt = POINT()
-        self._cursor_awakened = False
-
-    def _wake_cursor(self):
-        """
-        Windows 부팅 직후 또는 마우스 물리 미접촉 상태에서 OS가 커서를 숨김 상태로 두는 현상을
-        단 1회 미세 이동 패킷(+1 -> -1) 주입으로 깨웁니다. (최초 1회만 0.01ms 실행 후 완전 종료, 부하 0%)
-        """
-        try:
-            self.user32.mouse_event(0x0001, 1, 0, 0, 0)
-            self.user32.mouse_event(0x0001, -1, 0, 0, 0)
-            self._cursor_awakened = True
-        except Exception:
-            pass
 
     def move(self, dx, dy):
-        # 최초 구동 시 1회만 OS 커서를 깨우고, 이후에는 순수 SetCursorPos만 초고속 1:1 실행
-        if not self._cursor_awakened:
-            self._wake_cursor()
-
         self.accum_x += dx
         self.accum_y += dy
         
@@ -85,10 +65,9 @@ class NativeMouseController:
         self.accum_y -= move_y
         
         if move_x != 0 or move_y != 0:
-            if self.user32.GetCursorPos(ctypes.byref(self.pt)):
-                new_x = self.pt.x + move_x
-                new_y = self.pt.y + move_y
-                self.user32.SetCursorPos(new_x, new_y)
+            # MOUSEEVENTF_MOVE = 0x0001
+            # OS 입력 스트림에 상대 이동을 직접 주입하여 작업 표시줄/캡처 도구 등 모든 드래그 루프 정상 동작 보장
+            self.user32.mouse_event(0x0001, move_x, move_y, 0, 0)
 
 # 초고속 네이티브 마우스 컨트롤러 초기화
 mouse = NativeMouseController()
