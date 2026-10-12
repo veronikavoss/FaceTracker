@@ -39,35 +39,119 @@ def global_exception_handler(exctype, value, tb):
 sys.excepthook = global_exception_handler
 
 import ctypes
+import threading
 from PySide6.QtCore import QTimer
+
+class _POINT(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
 
 class NativeMouseController:
     """
-    Win32 User32.dll mouse_event(MOUSEEVENTF_MOVE)를 호출하는 네이티브 마우스 컨트롤러.
-    SetCursorPos와 달리 Windows OS 입력 서브시스템(Input Subsystem)으로 실제 마우스 이동 이벤트를 직접 주입하여:
-    1) 작업 표시줄(Taskbar) 앱 아이콘 순서 변경 드래그,
-    2) 캡처 도구(Snipping Tool / ScreenClippingHost) 영역 지정 사각형 드래그,
-    3) 파일 탐색기/웹 브라우저의 드래그 앤 드롭을 100% 네이티브로 완벽 지원합니다 (eViacam과 동일 원리).
+    응답 없음(Hung) 창에도 멈추지 않는 하이브리드 마우스 컨트롤러.
+
+    - 기본: mouse_event(MOUSEEVENTF_MOVE) 입력 주입 → 작업 표시줄/캡처 도구 드래그 등 네이티브 드래그 지원 (eViacam 방식)
+    - 문제: 크롬 등 포그라운드 창이 '응답 없음'이면 입력 주입이 블로킹되거나 무시될 수 있음
+    - 해결:
+      1) 입력 주입은 전용 워커 스레드에서만 실행 → 추적 스레드는 절대 블로킹되지 않음
+      2) 주입 호출이 100ms 이상 걸리면(블로킹) 추적 스레드에서 SetCursorPos로 즉시 직접 이동
+      3) 주입했는데 커서가 2회 연속 전혀 움직이지 않으면(무시됨) 0.5초간 SetCursorPos 모드로 전환 후 재시도
     """
+    BLOCK_TIMEOUT = 0.10
+    FALLBACK_HOLD = 0.5
+
     def __init__(self):
         self.user32 = ctypes.windll.user32
         self.accum_x = 0.0
         self.accum_y = 0.0
+        self._lock = threading.Lock()
+        self._wake = threading.Event()
+        self._pending_x = 0
+        self._pending_y = 0
+        self._busy_since = 0.0
+        self._last_inject_pos = None
+        self._miss_count = 0
+        self._fallback_until = 0.0
+        self._pt = _POINT()
+        self._worker = threading.Thread(target=self._worker_loop, name="MouseInjector", daemon=True)
+        self._worker.start()
+
+    def _get_pos(self, pt):
+        if self.user32.GetCursorPos(ctypes.byref(pt)):
+            return (pt.x, pt.y)
+        return None
+
+    def _set_pos_rel(self, pt, dx, dy):
+        pos = self._get_pos(pt)
+        if pos is not None:
+            self.user32.SetCursorPos(pos[0] + dx, pos[1] + dy)
+
+    def _worker_loop(self):
+        pt = _POINT()
+        while True:
+            self._wake.wait()
+            self._wake.clear()
+            with self._lock:
+                dx, dy = self._pending_x, self._pending_y
+                self._pending_x = 0
+                self._pending_y = 0
+            if dx == 0 and dy == 0:
+                continue
+            try:
+                now = time.time()
+                p0 = self._get_pos(pt)
+
+                # 직전 주입 이후 커서가 전혀 움직이지 않았다면 → 주입이 무시된 것으로 판단
+                if self._last_inject_pos is not None and p0 is not None:
+                    if p0 == self._last_inject_pos:
+                        self._miss_count += 1
+                    else:
+                        self._miss_count = 0
+                if self._miss_count >= 2:
+                    self._fallback_until = now + self.FALLBACK_HOLD
+                    self._miss_count = 0
+
+                if now < self._fallback_until or p0 is None:
+                    # 대체 모드: 응답 없는 창의 영향을 받지 않는 SetCursorPos
+                    self._last_inject_pos = None
+                    if p0 is not None:
+                        self.user32.SetCursorPos(p0[0] + dx, p0[1] + dy)
+                else:
+                    self._busy_since = now
+                    self.user32.mouse_event(0x0001, dx, dy, 0, 0)  # MOUSEEVENTF_MOVE
+                    self._busy_since = 0.0
+                    self._last_inject_pos = p0
+            except Exception:
+                self._busy_since = 0.0
 
     def move(self, dx, dy):
         self.accum_x += dx
         self.accum_y += dy
-        
+
         move_x = int(self.accum_x)
         move_y = int(self.accum_y)
-        
+
         self.accum_x -= move_x
         self.accum_y -= move_y
-        
-        if move_x != 0 or move_y != 0:
-            # MOUSEEVENTF_MOVE = 0x0001
-            # OS 입력 스트림에 상대 이동을 직접 주입하여 작업 표시줄/캡처 도구 등 모든 드래그 루프 정상 동작 보장
-            self.user32.mouse_event(0x0001, move_x, move_y, 0, 0)
+
+        if move_x == 0 and move_y == 0:
+            return
+
+        busy = self._busy_since
+        if busy and (time.time() - busy) > self.BLOCK_TIMEOUT:
+            # 워커가 입력 주입 호출에 묶여 있음(응답 없는 창) → 추적 스레드에서 즉시 직접 이동
+            with self._lock:
+                move_x += self._pending_x
+                move_y += self._pending_y
+                self._pending_x = 0
+                self._pending_y = 0
+            self._fallback_until = time.time() + self.FALLBACK_HOLD
+            self._set_pos_rel(self._pt, move_x, move_y)
+            return
+
+        with self._lock:
+            self._pending_x += move_x
+            self._pending_y += move_y
+        self._wake.set()
 
 # 초고속 네이티브 마우스 컨트롤러 초기화
 mouse = NativeMouseController()
