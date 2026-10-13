@@ -47,81 +47,46 @@ class _POINT(ctypes.Structure):
 
 class NativeMouseController:
     """
-    응답 없음(Hung) 창에도 멈추지 않는 하이브리드 마우스 컨트롤러.
-
-    - 기본: mouse_event(MOUSEEVENTF_MOVE) 입력 주입 → 작업 표시줄/캡처 도구 드래그 등 네이티브 드래그 지원 (eViacam 방식)
-    - 문제: 크롬 등 포그라운드 창이 '응답 없음'이면 입력 주입이 블로킹되거나 무시될 수 있음
-    - 해결:
-      1) 입력 주입은 전용 워커 스레드에서만 실행 → 추적 스레드는 절대 블로킹되지 않음
-      2) 주입 호출이 100ms 이상 걸리면(블로킹) 추적 스레드에서 SetCursorPos로 즉시 직접 이동
-      3) 주입했는데 커서가 2회 연속 전혀 움직이지 않으면(무시됨) 0.5초간 SetCursorPos 모드로 전환 후 재시도
+    초저지연(0ms) 네이티브 마우스 컨트롤러.
+    
+    1. 지연 0ms 다이렉트 디스패치:
+       - 불필요한 백그라운드 워커 스레드와 이벤트 큐잉을 완전히 제거하고,
+         트래커 스레드가 얼굴 움직임을 계산하는 즉시 Win32 mouse_event(MOUSEEVENTF_MOVE)를 호출합니다.
+       - Windows 포인터 정확도 향상(마우스 가속도 곡선)이 100% 정상 적용되며,
+         작업 표시줄 아이콘 순서 변경 및 캡처 도구 영역 사각형 드래그가 완벽 지원됩니다.
+       - 화면 구석이나 가장자리에 닿아도 오판하여 모드가 바뀌거나 속도가 느려지지 않습니다.
+    
+    2. Windows 정석 Hung 윈도우 감지 (IsHungAppWindow):
+       - 크롬 등의 포그라운드 창이 '응답 없음'(Hung) 상태일 때만 Windows 공식 API인
+         user32.IsHungAppWindow를 사용하여 감지하고,
+         입력 큐가 먹통인 경우에 한해 SetCursorPos로 즉시 직접 커서를 이동시킵니다.
     """
-    BLOCK_TIMEOUT = 0.10
-    FALLBACK_HOLD = 0.5
-
     def __init__(self):
         self.user32 = ctypes.windll.user32
         self.accum_x = 0.0
         self.accum_y = 0.0
-        self._lock = threading.Lock()
-        self._wake = threading.Event()
-        self._pending_x = 0
-        self._pending_y = 0
-        self._busy_since = 0.0
-        self._last_inject_pos = None
-        self._miss_count = 0
-        self._fallback_until = 0.0
         self._pt = _POINT()
-        self._worker = threading.Thread(target=self._worker_loop, name="MouseInjector", daemon=True)
-        self._worker.start()
+        self.GA_ROOT = 2
 
-    def _get_pos(self, pt):
-        if self.user32.GetCursorPos(ctypes.byref(pt)):
-            return (pt.x, pt.y)
-        return None
-
-    def _set_pos_rel(self, pt, dx, dy):
-        pos = self._get_pos(pt)
-        if pos is not None:
-            self.user32.SetCursorPos(pos[0] + dx, pos[1] + dy)
-
-    def _worker_loop(self):
-        pt = _POINT()
-        while True:
-            self._wake.wait()
-            self._wake.clear()
-            with self._lock:
-                dx, dy = self._pending_x, self._pending_y
-                self._pending_x = 0
-                self._pending_y = 0
-            if dx == 0 and dy == 0:
-                continue
-            try:
-                now = time.time()
-                p0 = self._get_pos(pt)
-
-                # 직전 주입 이후 커서가 전혀 움직이지 않았다면 → 주입이 무시된 것으로 판단
-                if self._last_inject_pos is not None and p0 is not None:
-                    if p0 == self._last_inject_pos:
-                        self._miss_count += 1
-                    else:
-                        self._miss_count = 0
-                if self._miss_count >= 2:
-                    self._fallback_until = now + self.FALLBACK_HOLD
-                    self._miss_count = 0
-
-                if now < self._fallback_until or p0 is None:
-                    # 대체 모드: 응답 없는 창의 영향을 받지 않는 SetCursorPos
-                    self._last_inject_pos = None
-                    if p0 is not None:
-                        self.user32.SetCursorPos(p0[0] + dx, p0[1] + dy)
-                else:
-                    self._busy_since = now
-                    self.user32.mouse_event(0x0001, dx, dy, 0, 0)  # MOUSEEVENTF_MOVE
-                    self._busy_since = 0.0
-                    self._last_inject_pos = p0
-            except Exception:
-                self._busy_since = 0.0
+    def _is_window_hung(self) -> bool:
+        """현재 포그라운드 창 또는 커서 위치 아래의 창이 응답 없음(Hung) 상태인지 검사"""
+        try:
+            # 1. 현재 활성(포그라운드) 창 검사
+            fg_hwnd = self.user32.GetForegroundWindow()
+            if fg_hwnd and self.user32.IsHungAppWindow(fg_hwnd):
+                return True
+            
+            # 2. 마우스 커서 위치 바로 아래의 창 검사
+            if self.user32.GetCursorPos(ctypes.byref(self._pt)):
+                hwnd_under = self.user32.WindowFromPoint(self._pt)
+                if hwnd_under:
+                    root_hwnd = self.user32.GetAncestor(hwnd_under, self.GA_ROOT)
+                    target = root_hwnd if root_hwnd else hwnd_under
+                    if self.user32.IsHungAppWindow(target):
+                        return True
+        except Exception:
+            pass
+        return False
 
     def move(self, dx, dy):
         self.accum_x += dx
@@ -136,22 +101,15 @@ class NativeMouseController:
         if move_x == 0 and move_y == 0:
             return
 
-        busy = self._busy_since
-        if busy and (time.time() - busy) > self.BLOCK_TIMEOUT:
-            # 워커가 입력 주입 호출에 묶여 있음(응답 없는 창) → 추적 스레드에서 즉시 직접 이동
-            with self._lock:
-                move_x += self._pending_x
-                move_y += self._pending_y
-                self._pending_x = 0
-                self._pending_y = 0
-            self._fallback_until = time.time() + self.FALLBACK_HOLD
-            self._set_pos_rel(self._pt, move_x, move_y)
+        # 포그라운드 창이나 커서 위치의 창이 '응답 없음'으로 멈춘 경우:
+        # OS 입력 큐가 멈춰 있을 수 있으므로 SetCursorPos로 커서를 즉시 강제 이동
+        if self._is_window_hung():
+            if self.user32.GetCursorPos(ctypes.byref(self._pt)):
+                self.user32.SetCursorPos(self._pt.x + move_x, self._pt.y + move_y)
             return
 
-        with self._lock:
-            self._pending_x += move_x
-            self._pending_y += move_y
-        self._wake.set()
+        # 정상 상태: OS 입력 서브시스템에 0ms 지연으로 상대 이동 직접 주입 (네이티브 가속 및 드래그 완벽 지원)
+        self.user32.mouse_event(0x0001, move_x, move_y, 0, 0)
 
 # 초고속 네이티브 마우스 컨트롤러 초기화
 mouse = NativeMouseController()
