@@ -8,8 +8,8 @@
     "camera_backend": "DSHOW",
     "camera_width": 640,
     "camera_height": 480,
-    "enable_click_bar": true,
-    "close_clickbar_on_exit": true,
+    "enable_click_bar": false,
+    "close_clickbar_on_exit": false,
     "auto_start_windows": false,
     "auto_start_tracking": false,
     "current_profile": "my profile",
@@ -25,22 +25,22 @@
             "spike_threshold": 5.0
         },
         "my profile": {
-            "sensitivity_x": 27,
-            "sensitivity_y": 27,
-            "motion_threshold": 3,
+            "sensitivity_x": 25,
+            "sensitivity_y": 25,
+            "motion_threshold": 2,
             "smoothing": 3,
-            "acceleration": 5,
+            "acceleration": 1,
             "correction_interval": 5,
-            "illumination_threshold": 5.0,
+            "illumination_threshold": 10.0,
             "spike_threshold": 15.0
         }
     },
-    "sensitivity_x": 27,
-    "sensitivity_y": 27,
-    "motion_threshold": 3,
+    "sensitivity_x": 25,
+    "sensitivity_y": 25,
+    "motion_threshold": 2,
     "smoothing": 3,
-    "acceleration": 5,
+    "acceleration": 1,
     "correction_interval": 5,
-    "illumination_threshold": 5.0,
+    "illumination_threshold": 10.0,
     "spike_threshold": 15.0
 }

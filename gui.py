@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QComboBox, QCheckBox, QFrame, QStackedWidget,
     QGraphicsDropShadowEffect, QSizePolicy, QSpacerItem, QScrollArea, QGridLayout,
-    QDialog, QLineEdit, QMessageBox
+    QDialog, QLineEdit, QMessageBox, QStackedLayout
 )
 from PySide6.QtMultimedia import QMediaDevices
 import cv2
@@ -462,6 +462,137 @@ class CustomTitleBar(QWidget):
             event.accept()
 
 
+class ClickableValueBadge(QWidget):
+    """
+    설정 화면에서 숫자를 클릭했을 때 인라인으로 직접 입력 및 수정할 수 있는 상호작용형 뱃지 위젯.
+    - 평소에는 포인팅 핸드 커서와 호버 테두리가 있는 깔끔한 숫자 라벨로 표시됩니다.
+    - 클릭 시 즉시 입력창(QLineEdit)으로 전환되어 키보드로 숫자를 직접 타이핑할 수 있습니다.
+    - Enter를 누르거나 포커스를 벗어나면 유효 범위(min_val~max_val)로 자동 클램핑되어
+      연결된 슬라이더 및 config 설정에 즉각 반영됩니다.
+    - Esc 키를 누르면 변경을 취소하고 원래 값으로 돌아옵니다.
+    """
+    def __init__(self, initial_text, min_val, max_val, is_float=False, scale=1.0, suffix="", color="#38BDF8", tooltip=None, slider=None, parent=None):
+        super().__init__(parent)
+        self.min_val = min_val
+        self.max_val = max_val
+        self.is_float = is_float
+        self.scale = scale
+        self.suffix = suffix
+        self.color = color
+        self.slider = slider
+        self._is_editing = False
+        
+        self.stack_layout = QStackedLayout(self)
+        self.stack_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 1. 보기 모드 (QLabel)
+        self.label = QLabel(initial_text)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._apply_label_style()
+        if tooltip:
+            self.label.setToolTip(f"{tooltip}\n💡 숫자를 클릭하면 키보드로 직접 입력할 수 있습니다.")
+        else:
+            self.label.setToolTip("💡 숫자를 클릭하면 키보드로 직접 입력할 수 있습니다.")
+        self.label.mousePressEvent = self._on_label_clicked
+        self.stack_layout.addWidget(self.label)
+        
+        # 2. 편집 모드 (QLineEdit)
+        self.edit = QLineEdit()
+        self.edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.edit.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: #0F172A;
+                color: {self.color};
+                font-size: 13px;
+                font-weight: 800;
+                border: 1.5px solid {self.color};
+                border-radius: 4px;
+                padding: 1px 2px;
+                min-width: 38px;
+            }}
+        """)
+        self.edit.returnPressed.connect(self._commit_edit)
+        self.edit.editingFinished.connect(self._commit_edit)
+        self.stack_layout.addWidget(self.edit)
+        
+        self.stack_layout.setCurrentIndex(0)
+
+    def _apply_label_style(self):
+        self.label.setStyleSheet(f"""
+            QLabel {{
+                color: {self.color};
+                font-size: 14px;
+                font-weight: 800;
+                min-width: 36px;
+                padding: 1px 4px;
+                border-radius: 4px;
+                border: 1px solid transparent;
+            }}
+            QLabel:hover {{
+                background-color: #1E293B;
+                border: 1px dashed {self.color};
+            }}
+        """)
+
+    def _on_label_clicked(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._start_edit()
+
+    def _start_edit(self):
+        self._is_editing = True
+        raw = self.label.text().replace(self.suffix, "").strip()
+        self.edit.setText(raw)
+        self.stack_layout.setCurrentIndex(1)
+        self.edit.setFocus()
+        self.edit.selectAll()
+
+    def _commit_edit(self):
+        if not self._is_editing:
+            return
+        self._is_editing = False
+        text = self.edit.text().replace(self.suffix, "").strip()
+        try:
+            if self.is_float:
+                val = float(text)
+                val = max(float(self.min_val), min(float(self.max_val), val))
+                slider_val = int(round(val * self.scale))
+            else:
+                val = int(round(float(text)))
+                val = max(int(self.min_val), min(int(self.max_val), val))
+                slider_val = val
+            
+            if self.slider is not None:
+                self.slider.setValue(slider_val)
+            else:
+                if self.is_float:
+                    self.setText(f"{val:.1f}{self.suffix}")
+                else:
+                    self.setText(f"{val}{self.suffix}")
+        except Exception:
+            pass
+        self.stack_layout.setCurrentIndex(0)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self._is_editing = False
+            self.stack_layout.setCurrentIndex(0)
+            return
+        super().keyPressEvent(event)
+
+    def setText(self, text):
+        self.label.setText(text)
+
+    def text(self):
+        return self.label.text()
+
+    def setToolTip(self, tip):
+        self.label.setToolTip(f"{tip}\n💡 숫자를 클릭하면 키보드로 직접 입력할 수 있습니다.")
+
+    def setStyleSheet(self, style):
+        self.label.setStyleSheet(style)
+
+
 class FaceTrackerGUI(QWidget):
     # 백엔드 스레드로부터 비디오 프레임 전달받는 Qt 시그널
     frame_received_signal = Signal(QImage, bool, int, int, int, int, int)
@@ -688,24 +819,8 @@ class FaceTrackerGUI(QWidget):
         video_card = QFrame()
         video_card.setProperty("class", "DashboardCard")
         vc_layout = QVBoxLayout(video_card)
-        vc_layout.setContentsMargins(14, 10, 14, 10)
-        vc_layout.setSpacing(6)
-        
-        # 카드 상단 헤더
-        vc_header = QHBoxLayout()
-        vc_title = QLabel("LIVE VIDEO FEED")
-        vc_title.setStyleSheet("font-size: 14px; font-weight: 800; color: #38BDF8; letter-spacing: 0.8px;")
-        
-        self.badge_detected = QLabel("추적 대기 중...")
-        self.badge_detected.setStyleSheet("""
-            background-color: #381A1A; color: #FCA5A5;
-            font-size: 11px; font-weight: bold; padding: 3px 10px; border-radius: 5px;
-            border: 1px solid #7F1D1D;
-        """)
-        vc_header.addWidget(vc_title)
-        vc_header.addStretch()
-        vc_header.addWidget(self.badge_detected)
-        vc_layout.addLayout(vc_header)
+        vc_layout.setContentsMargins(14, 12, 14, 12)
+        vc_layout.setSpacing(8)
         
         # 비디오 캔버스 라벨 (가로 480px, 세로 330px - 4:3 비율 최적화)
         self.video_canvas = QLabel()
@@ -729,13 +844,23 @@ class FaceTrackerGUI(QWidget):
         self.cam_name_lbl = QLabel(f"Device: {self._get_current_cam_name()}")
         self.cam_name_lbl.setStyleSheet("color: #CBD5E1; font-size: 12px; font-weight: 600; border: none; background: transparent;")
         
+        # 추적 상태 뱃지를 상단에서 하단 정보 바로 이동 (사용자 요청 반영)
+        self.badge_detected = QLabel("추적 대기 중...")
+        self.badge_detected.setStyleSheet("""
+            background-color: #2A1414; color: #EF4444;
+            font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 4px;
+            border: 1px solid #7F1D1D;
+        """)
+        
         self.cam_fps_lbl = QLabel("FPS: 0 | 640x480")
         self.cam_fps_lbl.setStyleSheet("color: #38BDF8; font-size: 12px; font-weight: 800; border: none; background: transparent;")
+        
         vc_footer.addWidget(self.cam_name_lbl)
         vc_footer.addStretch()
+        vc_footer.addWidget(self.badge_detected)
+        vc_footer.addSpacing(12)
         vc_footer.addWidget(self.cam_fps_lbl)
         
-        vc_layout.addSpacing(4)
         vc_layout.addWidget(vc_footer_frame)
         
         layout.addWidget(video_card)
@@ -984,105 +1109,129 @@ class FaceTrackerGUI(QWidget):
 
         # 민감도 X
         grid.addWidget(make_field_lbl("민감도 X:", tip_sx), 0, 0)
-        self.sx_badge = QLabel(f"{self.config.get('sensitivity_x', 27)}")
-        self.sx_badge.setStyleSheet("color: #38BDF8; font-size: 14px; font-weight: 800; min-width: 32px;")
-        self.sx_badge.setToolTip(tip_sx)
-        grid.addWidget(self.sx_badge, 0, 1)
         self.sx_slider = QSlider(Qt.Orientation.Horizontal)
         self.sx_slider.setRange(0, 50)
         self.sx_slider.setValue(int(self.config.get("sensitivity_x", 27)))
         self.sx_slider.setToolTip(tip_sx)
         self.sx_slider.valueChanged.connect(self._on_sx_changed)
+        
+        self.sx_badge = ClickableValueBadge(
+            initial_text=f"{self.config.get('sensitivity_x', 27)}",
+            min_val=0, max_val=50, is_float=False, scale=1.0,
+            color="#38BDF8", tooltip=tip_sx, slider=self.sx_slider
+        )
+        grid.addWidget(self.sx_badge, 0, 1)
         grid.addWidget(self.sx_slider, 0, 2)
         
         # 민감도 Y
         grid.addWidget(make_field_lbl("민감도 Y:", tip_sy), 0, 3)
-        self.sy_badge = QLabel(f"{self.config.get('sensitivity_y', 27)}")
-        self.sy_badge.setStyleSheet("color: #38BDF8; font-size: 14px; font-weight: 800; min-width: 32px;")
-        self.sy_badge.setToolTip(tip_sy)
-        grid.addWidget(self.sy_badge, 0, 4)
         self.sy_slider = QSlider(Qt.Orientation.Horizontal)
         self.sy_slider.setRange(0, 50)
         self.sy_slider.setValue(int(self.config.get("sensitivity_y", 27)))
         self.sy_slider.setToolTip(tip_sy)
         self.sy_slider.valueChanged.connect(self._on_sy_changed)
+        
+        self.sy_badge = ClickableValueBadge(
+            initial_text=f"{self.config.get('sensitivity_y', 27)}",
+            min_val=0, max_val=50, is_float=False, scale=1.0,
+            color="#38BDF8", tooltip=tip_sy, slider=self.sy_slider
+        )
+        grid.addWidget(self.sy_badge, 0, 4)
         grid.addWidget(self.sy_slider, 0, 5)
         
         # 임계값 (Deadzone)
         grid.addWidget(make_field_lbl("임계값:", tip_th), 1, 0)
-        self.th_badge = QLabel(f"{self.config.get('motion_threshold', 2)}")
-        self.th_badge.setStyleSheet("color: #F1F5F9; font-size: 14px; font-weight: 800; min-width: 32px;")
-        self.th_badge.setToolTip(tip_th)
-        grid.addWidget(self.th_badge, 1, 1)
         self.th_slider = QSlider(Qt.Orientation.Horizontal)
         self.th_slider.setRange(0, 4)
         self.th_slider.setValue(int(self.config.get("motion_threshold", 2)))
         self.th_slider.setToolTip(tip_th)
         self.th_slider.valueChanged.connect(self._on_th_changed)
+        
+        self.th_badge = ClickableValueBadge(
+            initial_text=f"{self.config.get('motion_threshold', 2)}",
+            min_val=0, max_val=4, is_float=False, scale=1.0,
+            color="#F1F5F9", tooltip=tip_th, slider=self.th_slider
+        )
+        grid.addWidget(self.th_badge, 1, 1)
         grid.addWidget(self.th_slider, 1, 2)
         
         # 스무딩
         grid.addWidget(make_field_lbl("스무딩:", tip_sm), 1, 3)
-        self.sm_badge = QLabel(f"{self.config.get('smoothing', 3)}")
-        self.sm_badge.setStyleSheet("color: #34D399; font-size: 14px; font-weight: 800; min-width: 32px;")
-        self.sm_badge.setToolTip(tip_sm)
-        grid.addWidget(self.sm_badge, 1, 4)
         self.sm_slider = QSlider(Qt.Orientation.Horizontal)
         self.sm_slider.setRange(0, 6)
         self.sm_slider.setValue(int(self.config.get("smoothing", 3)))
         self.sm_slider.setToolTip(tip_sm)
         self.sm_slider.valueChanged.connect(self._on_sm_changed)
+        
+        self.sm_badge = ClickableValueBadge(
+            initial_text=f"{self.config.get('smoothing', 3)}",
+            min_val=0, max_val=6, is_float=False, scale=1.0,
+            color="#34D399", tooltip=tip_sm, slider=self.sm_slider
+        )
+        grid.addWidget(self.sm_badge, 1, 4)
         grid.addWidget(self.sm_slider, 1, 5)
         
         # 가속도 (좌측: 0, 1, 2열)
         grid.addWidget(make_field_lbl("가속도:", tip_acc), 2, 0)
-        self.acc_badge = QLabel(f"{self.config.get('acceleration', 5)}")
-        self.acc_badge.setStyleSheet("color: #FBBF24; font-size: 14px; font-weight: 800; min-width: 32px;")
-        self.acc_badge.setToolTip(tip_acc)
-        grid.addWidget(self.acc_badge, 2, 1)
         self.acc_slider = QSlider(Qt.Orientation.Horizontal)
         self.acc_slider.setRange(0, 10)
         self.acc_slider.setValue(int(self.config.get("acceleration", 5)))
         self.acc_slider.setToolTip(tip_acc)
         self.acc_slider.valueChanged.connect(self._on_accel_changed)
+        
+        self.acc_badge = ClickableValueBadge(
+            initial_text=f"{self.config.get('acceleration', 5)}",
+            min_val=0, max_val=10, is_float=False, scale=1.0,
+            color="#FBBF24", tooltip=tip_acc, slider=self.acc_slider
+        )
+        grid.addWidget(self.acc_badge, 2, 1)
         grid.addWidget(self.acc_slider, 2, 2)
         
         # 보정 주기 (우측: 3, 4, 5열)
         grid.addWidget(make_field_lbl("보정 주기:", tip_ci), 2, 3)
-        self.ci_badge = QLabel(f"{self.config.get('correction_interval', 5)}")
-        self.ci_badge.setStyleSheet("color: #A78BFA; font-size: 14px; font-weight: 800; min-width: 32px;")
-        self.ci_badge.setToolTip(tip_ci)
-        grid.addWidget(self.ci_badge, 2, 4)
         self.ci_slider = QSlider(Qt.Orientation.Horizontal)
         self.ci_slider.setRange(1, 20)
         self.ci_slider.setValue(int(self.config.get("correction_interval", 5)))
         self.ci_slider.setToolTip(tip_ci)
         self.ci_slider.valueChanged.connect(self._on_ci_changed)
+        
+        self.ci_badge = ClickableValueBadge(
+            initial_text=f"{self.config.get('correction_interval', 5)}",
+            min_val=1, max_val=20, is_float=False, scale=1.0,
+            color="#A78BFA", tooltip=tip_ci, slider=self.ci_slider
+        )
+        grid.addWidget(self.ci_badge, 2, 4)
         grid.addWidget(self.ci_slider, 2, 5)
         
         # 광량 감지 & 튐 억제
         grid.addWidget(make_field_lbl("광량 감지:", tip_il), 3, 0)
-        self.il_badge = QLabel(f"{float(self.config.get('illumination_threshold', 10.0)):.1f}")
-        self.il_badge.setStyleSheet("color: #F1F5F9; font-size: 14px; font-weight: 800; min-width: 42px;")
-        self.il_badge.setToolTip(tip_il)
-        grid.addWidget(self.il_badge, 3, 1)
         self.il_slider = QSlider(Qt.Orientation.Horizontal)
         self.il_slider.setRange(10, 300)
         self.il_slider.setValue(int(float(self.config.get("illumination_threshold", 10.0)) * 10))
         self.il_slider.setToolTip(tip_il)
         self.il_slider.valueChanged.connect(self._on_il_changed)
+        
+        self.il_badge = ClickableValueBadge(
+            initial_text=f"{float(self.config.get('illumination_threshold', 10.0)):.1f}",
+            min_val=1.0, max_val=30.0, is_float=True, scale=10.0,
+            color="#F1F5F9", tooltip=tip_il, slider=self.il_slider
+        )
+        grid.addWidget(self.il_badge, 3, 1)
         grid.addWidget(self.il_slider, 3, 2)
         
         grid.addWidget(make_field_lbl("튐 억제:", tip_sp), 3, 3)
-        self.sp_badge = QLabel(f"{float(self.config.get('spike_threshold', 15.0)):.1f}px")
-        self.sp_badge.setStyleSheet("color: #F1F5F9; font-size: 14px; font-weight: 800; min-width: 48px;")
-        self.sp_badge.setToolTip(tip_sp)
-        grid.addWidget(self.sp_badge, 3, 4)
         self.sp_slider = QSlider(Qt.Orientation.Horizontal)
         self.sp_slider.setRange(50, 500)
         self.sp_slider.setValue(int(float(self.config.get("spike_threshold", 15.0)) * 10))
         self.sp_slider.setToolTip(tip_sp)
         self.sp_slider.valueChanged.connect(self._on_sp_changed)
+        
+        self.sp_badge = ClickableValueBadge(
+            initial_text=f"{float(self.config.get('spike_threshold', 15.0)):.1f}px",
+            min_val=5.0, max_val=50.0, is_float=True, scale=10.0, suffix="px",
+            color="#F1F5F9", tooltip=tip_sp, slider=self.sp_slider
+        )
+        grid.addWidget(self.sp_badge, 3, 4)
         grid.addWidget(self.sp_slider, 3, 5)
         
         mc_layout.addLayout(grid)
