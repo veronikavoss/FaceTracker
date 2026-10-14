@@ -139,10 +139,19 @@ def run_build():
 
     final_dist = os.path.join(dist_dir, "FaceTracker")
     if target_dist != final_dist:
-        if os.path.exists(final_dist):
-            shutil.rmtree(final_dist, ignore_errors=True)
-        os.rename(target_dist, final_dist)
-        target_dist = final_dist
+        try:
+            if os.path.exists(final_dist):
+                shutil.rmtree(final_dist)
+            os.rename(target_dist, final_dist)
+            target_dist = final_dist
+        except Exception:
+            # 만약 기존 FaceTracker 폴더가 일부 파일 잠금으로 rename 실패 시 파일 단위 덮어쓰기 복사
+            shutil.copytree(target_dist, final_dist, dirs_exist_ok=True)
+            try:
+                shutil.rmtree(target_dist, ignore_errors=True)
+            except Exception:
+                pass
+            target_dist = final_dist
 
     # 임시 빌드 캐시 정리
     build_cache = os.path.join(dist_dir, "main.build")

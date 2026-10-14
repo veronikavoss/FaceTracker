@@ -815,12 +815,12 @@ class FaceTrackerGUI(QWidget):
         layout.setContentsMargins(20, 14, 20, 16)
         layout.setSpacing(10)
         
-        # 1-1. 대형 라이브 카메라 프리뷰 카드
+        # 1-1. 대형 라이브 카메라 프리뷰 카드 (순수 카메라 화면만 단순하게 표시)
         video_card = QFrame()
         video_card.setProperty("class", "DashboardCard")
         vc_layout = QVBoxLayout(video_card)
-        vc_layout.setContentsMargins(14, 12, 14, 12)
-        vc_layout.setSpacing(8)
+        vc_layout.setContentsMargins(14, 14, 14, 14)
+        vc_layout.setSpacing(0)
         
         # 비디오 캔버스 라벨 (가로 480px, 세로 330px - 4:3 비율 최적화)
         self.video_canvas = QLabel()
@@ -829,39 +829,9 @@ class FaceTrackerGUI(QWidget):
         self.video_canvas.setAlignment(Qt.AlignmentFlag.AlignCenter)
         vc_layout.addWidget(self.video_canvas, 0, Qt.AlignmentFlag.AlignCenter)
         
-        # 하단 카메라 메타정보 바 (비디오 화면과 완전히 분리된 전용 독립 정보 바)
-        vc_footer_frame = QFrame()
-        vc_footer_frame.setStyleSheet("""
-            QFrame {
-                background-color: #0B111E;
-                border: 1px solid #1E293B;
-                border-radius: 6px;
-            }
-        """)
-        vc_footer = QHBoxLayout(vc_footer_frame)
-        vc_footer.setContentsMargins(12, 6, 12, 6)
-        
-        self.cam_name_lbl = QLabel(f"Device: {self._get_current_cam_name()}")
-        self.cam_name_lbl.setStyleSheet("color: #CBD5E1; font-size: 12px; font-weight: 600; border: none; background: transparent;")
-        
-        # 추적 상태 뱃지를 상단에서 하단 정보 바로 이동 (사용자 요청 반영)
-        self.badge_detected = QLabel("추적 대기 중...")
-        self.badge_detected.setStyleSheet("""
-            background-color: #2A1414; color: #EF4444;
-            font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 4px;
-            border: 1px solid #7F1D1D;
-        """)
-        
-        self.cam_fps_lbl = QLabel("FPS: 0 | 640x480")
-        self.cam_fps_lbl.setStyleSheet("color: #38BDF8; font-size: 12px; font-weight: 800; border: none; background: transparent;")
-        
-        vc_footer.addWidget(self.cam_name_lbl)
-        vc_footer.addStretch()
-        vc_footer.addWidget(self.badge_detected)
-        vc_footer.addSpacing(12)
-        vc_footer.addWidget(self.cam_fps_lbl)
-        
-        vc_layout.addWidget(vc_footer_frame)
+        # 이전 하단 메타바 요소들은 단순화를 위해 완전 제거 (참조 안전용 None 초기화)
+        self.cam_name_lbl = None
+        self.badge_detected = None
         
         layout.addWidget(video_card)
         
@@ -872,7 +842,7 @@ class FaceTrackerGUI(QWidget):
         cc_layout.setContentsMargins(14, 12, 14, 12)
         cc_layout.setSpacing(10)
         
-        # 1행: 카메라 선택 (실제 하드웨어 명칭 노출), 해상도, FPS 드롭다운
+        # 1행: 카메라 선택 (실제 하드웨어 명칭 노출) + 실시간 FPS 및 해상도 뱃지 (상단에서 이동)
         row1 = QHBoxLayout()
         cam_lbl = QLabel("카메라 선택:")
         cam_lbl.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 600;")
@@ -890,21 +860,23 @@ class FaceTrackerGUI(QWidget):
         row1.addWidget(cam_lbl)
         row1.addWidget(self.cam_combo, 1)
         
-        opt_badge = QLabel("⚡ 640×480 @ 30 FPS (추적 최적화)")
-        opt_badge.setStyleSheet("""
+        # 상단 프리뷰에서 아래로 옮겨온 실시간 FPS 및 해상도 뱃지
+        self.cam_fps_lbl = QLabel("FPS: 0 | 640×480")
+        self.cam_fps_lbl.setStyleSheet("""
             QLabel {
                 color: #38BDF8;
                 background-color: #0F172A;
-                border: 1px solid rgba(56, 189, 248, 0.35);
+                border: 1px solid rgba(56, 189, 248, 0.45);
                 border-radius: 6px;
-                padding: 5px 12px;
+                padding: 5px 14px;
                 font-size: 12px;
-                font-weight: 600;
-                margin-left: 12px;
+                font-weight: 800;
+                margin-left: 10px;
             }
         """)
-        opt_badge.setToolTip("인풋렉 0과 저조도 노이즈 억제를 위해 얼굴 마우스 표준인 640×480 @ 30 FPS 최적 모드로 고정되어 있습니다.")
-        row1.addWidget(opt_badge)
+        self.cam_fps_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.cam_fps_lbl.setToolTip("실시간 프레임레이트(FPS) 및 카메라 해상도")
+        row1.addWidget(self.cam_fps_lbl)
         cc_layout.addLayout(row1)
         
         # 2행: 카메라 고급 설정 창 열기 버튼 (홈 화면을 심플하게 정돈)
@@ -1514,21 +1486,23 @@ class FaceTrackerGUI(QWidget):
             self.btn_glow.setColor(QColor(239, 68, 68, 160))
             self.status_text.setText("상태: ● 추적 활성화 중 (코끝 추적 동작 중)")
             self.status_text.setStyleSheet("color: #34D399; font-size: 11px; font-weight: bold; margin-top: 4px;")
-            self.badge_detected.setText("추적 활성화 중...")
-            self.badge_detected.setStyleSheet("""
-                background-color: #064E3B; color: #34D399;
-                font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 4px;
-            """)
+            if self.badge_detected is not None:
+                self.badge_detected.setText("추적 활성화 중...")
+                self.badge_detected.setStyleSheet("""
+                    background-color: #064E3B; color: #34D399;
+                    font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 4px;
+                """)
         else:
             self.start_btn.setText(f"▶   START TRACKING ({self.config.get('tracking_toggle_key', 'F12').upper()})")
             self.btn_glow.setColor(QColor(16, 185, 129, 140))
             self.status_text.setText("상태: 비활성 (F12를 누르거나 위 버튼을 클릭하여 추적 시작)")
             self.status_text.setStyleSheet("color: #64748B; font-size: 11px; font-weight: 500; margin-top: 4px;")
-            self.badge_detected.setText("추적 대기 중...")
-            self.badge_detected.setStyleSheet("""
-                background-color: #2A1414; color: #EF4444;
-                font-size: 10px; font-weight: bold; padding: 3px 10px; border-radius: 4px;
-            """)
+            if self.badge_detected is not None:
+                self.badge_detected.setText("추적 대기 중...")
+                self.badge_detected.setStyleSheet("""
+                    background-color: #2A1414; color: #EF4444;
+                    font-size: 10px; font-weight: bold; padding: 3px 10px; border-radius: 4px;
+                """)
             config.trim_process_memory()
 
     @Slot(QImage, bool, int, int, int, int, int)
@@ -1552,7 +1526,8 @@ class FaceTrackerGUI(QWidget):
             self.video_canvas.setPixmap(scaled_pix)
             
             self.cam_fps_lbl.setText(f"FPS: {fps} | {w}x{h}")
-            self.cam_name_lbl.setText(f"Device: {self._get_current_cam_name()}")
+            if self.cam_name_lbl is not None:
+                self.cam_name_lbl.setText(f"Device: {self._get_current_cam_name()}")
         except Exception:
             pass
         finally:
@@ -1611,7 +1586,8 @@ class FaceTrackerGUI(QWidget):
             print(f"[카메라 전환] 장치 선택: {cname} (DSHOW ID: {cid})")
             self.config["camera_id"] = cid
             config.save_config(self.config)
-            self.cam_name_lbl.setText(f"Device: {cname}")
+            if self.cam_name_lbl is not None:
+                self.cam_name_lbl.setText(f"Device: {cname}")
             
             # 추적 기능이 켜진 상태(START TRACKING)에서 카메라를 변경하더라도
             # 추적 플래그(is_tracking)는 끄지 않고 그대로 유지!
