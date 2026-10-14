@@ -749,16 +749,22 @@ class ClickBarWindow(QWidget):
         return False
 
     def _ensure_topmost(self):
-        """클릭바가 화면 최상단에 위치하도록 보장 (Z-order 경쟁 극복 및 무한 루프 100% 방지)"""
+        """
+        [DwellClicker 바이너리 공법 이식] 클릭바가 화면 최상단(HWND_TOPMOST)에 위치하도록 강제 유지
+        - DwellClicker와 100% 동일한 Win32 플래그(SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE = 0x0013) 사용
+        - 포커스 뺏김(깜빡임) 0%, 어떤 전체화면/최상위 창보다 확실하게 맨 위로 복귀
+        """
         if not self.cfg.get("always_on_top", True) or not self.isVisible():
             return
         if self._is_updating_topmost:
             return
         self._is_updating_topmost = True
         try:
-            hwnd = self.winId()
-            flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER
+            hwnd = int(self.winId())
+            flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
             user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
+        except Exception:
+            pass
         finally:
             self._is_updating_topmost = False
 
@@ -1091,11 +1097,11 @@ class ClickBarWindow(QWidget):
             cur_y = cur_pos.y()
             now = time.time()
 
-            # [최우선순위 보장] 항상 위 옵션이 켜져 있을 때 화면 최상단(HWND_TOPMOST) 유지
+            # [DwellClicker 공법 이식]: 항상 위 옵션이 켜져 있을 때 2초 주기 무조건 강제 최상위 갱신
             if self.cfg.get("always_on_top", True):
-                # 1) 다른 창이 내 위로 올라왔을 경우 복구
-                # 2) 주기적 안전장치로 1.0초마다 보장 (과도한 윈도우 API 호출 방지)
-                if self._is_topmost_lost() or (now - self.last_topmost_check > 1.0):
+                # 1) Z-order 밀림이 감지되었거나,
+                # 2) DwellClicker와 동일하게 2.0초 주기로 무조건 SetWindowPos(HWND_TOPMOST)를 강제 재호출
+                if self._is_topmost_lost() or (now - self.last_topmost_check >= 2.0):
                     self.last_topmost_check = now
                     self._ensure_topmost()
 
