@@ -52,7 +52,7 @@ def run_build():
         "--output-filename=FaceTracker.exe",
         "--windows-icon-from-ico=facetracker.ico",
         "--assume-yes-for-downloads",
-        "--jobs=2",
+        "--jobs=1",
         "--low-memory",
         "--nofollow-import-to=tkinter,unittest,pytest,pydoc,sqlite3,IPython,jupyter,matplotlib,scipy,mediapipe,psutil",
         "--include-module=click_bar",

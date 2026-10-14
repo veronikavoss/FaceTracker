@@ -45,8 +45,8 @@ WS_EX_TOPMOST = 0x00000008
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_APPWINDOW = 0x00040000
 
-HWND_TOPMOST = -1
-HWND_NOTOPMOST = -2
+HWND_TOPMOST = wintypes.HWND(-1)
+HWND_NOTOPMOST = wintypes.HWND(-2)
 SWP_NOSIZE = 0x0001
 SWP_NOMOVE = 0x0002
 SWP_NOACTIVATE = 0x0010
@@ -54,6 +54,27 @@ SWP_FRAMECHANGED = 0x0020
 SWP_SHOWWINDOW = 0x0040
 SWP_NOOWNERZORDER = 0x0200
 GW_HWNDPREV = 3
+
+# 64-bit Windows ctypes API 타입 시그니처 명시 (포인터 인자 오류 및 1400 에러 원천 차단)
+user32.SetWindowPos.argtypes = [
+    wintypes.HWND,
+    wintypes.HWND,
+    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    wintypes.UINT
+]
+user32.SetWindowPos.restype = wintypes.BOOL
+
+user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.GetWindowLongW.restype = wintypes.LONG
+
+user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
+user32.SetWindowLongW.restype = wintypes.LONG
+
+user32.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
+user32.GetWindow.restype = wintypes.HWND
+
+user32.IsWindowVisible.argtypes = [wintypes.HWND]
+user32.IsWindowVisible.restype = wintypes.BOOL
 
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
@@ -1097,11 +1118,11 @@ class ClickBarWindow(QWidget):
             cur_y = cur_pos.y()
             now = time.time()
 
-            # [DwellClicker 공법 이식]: 항상 위 옵션이 켜져 있을 때 2초 주기 무조건 강제 최상위 갱신
+            # [DwellClicker 공법 이식 & 초고속 복구]: 항상 위 옵션이 켜져 있을 때 0.5초 주기 무조건 강제 최상위 갱신
             if self.cfg.get("always_on_top", True):
                 # 1) Z-order 밀림이 감지되었거나,
-                # 2) DwellClicker와 동일하게 2.0초 주기로 무조건 SetWindowPos(HWND_TOPMOST)를 강제 재호출
-                if self._is_topmost_lost() or (now - self.last_topmost_check >= 2.0):
+                # 2) 0.5초 주기로 무조건 SetWindowPos(HWND_TOPMOST)를 강제 재호출하여 어떤 창보다 즉시 맨 위로 복귀
+                if self._is_topmost_lost() or (now - self.last_topmost_check >= 0.5):
                     self.last_topmost_check = now
                     self._ensure_topmost()
 

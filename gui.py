@@ -860,15 +860,16 @@ class FaceTrackerGUI(QWidget):
         row1.addWidget(cam_lbl)
         row1.addWidget(self.cam_combo, 1)
         
-        # 상단 프리뷰에서 아래로 옮겨온 실시간 FPS 및 해상도 뱃지
+        # 상단 프리뷰에서 아래로 옮겨온 실시간 FPS 및 해상도 뱃지 (카메라 선택 콤보박스와 동일한 높이로 정렬)
         self.cam_fps_lbl = QLabel("FPS: 0 | 640×480")
+        self.cam_fps_lbl.setFixedHeight(32)
         self.cam_fps_lbl.setStyleSheet("""
             QLabel {
                 color: #38BDF8;
                 background-color: #0F172A;
-                border: 1px solid rgba(56, 189, 248, 0.45);
+                border: 1.5px solid rgba(56, 189, 248, 0.45);
                 border-radius: 6px;
-                padding: 5px 14px;
+                padding: 0px 14px;
                 font-size: 12px;
                 font-weight: 800;
                 margin-left: 10px;
@@ -876,7 +877,7 @@ class FaceTrackerGUI(QWidget):
         """)
         self.cam_fps_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cam_fps_lbl.setToolTip("실시간 프레임레이트(FPS) 및 카메라 해상도")
-        row1.addWidget(self.cam_fps_lbl)
+        row1.addWidget(self.cam_fps_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
         cc_layout.addLayout(row1)
         
         # 2행: 카메라 고급 설정 창 열기 버튼 (홈 화면을 심플하게 정돈)
