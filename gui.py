@@ -482,6 +482,9 @@ class ClickableValueBadge(QWidget):
         self.slider = slider
         self._is_editing = False
         
+        # 고정 폭 54px 및 높이 28px로 컴팩트하게 설정하여 그리드 정렬을 칼같이 일치시킴
+        self.setFixedSize(54, 28)
+        
         self.stack_layout = QStackedLayout(self)
         self.stack_layout.setContentsMargins(0, 0, 0, 0)
         
@@ -509,7 +512,6 @@ class ClickableValueBadge(QWidget):
                 border: 1.5px solid {self.color};
                 border-radius: 4px;
                 padding: 1px 2px;
-                min-width: 38px;
             }}
         """)
         self.edit.returnPressed.connect(self._commit_edit)
@@ -522,10 +524,9 @@ class ClickableValueBadge(QWidget):
         self.label.setStyleSheet(f"""
             QLabel {{
                 color: {self.color};
-                font-size: 14px;
+                font-size: 13px;
                 font-weight: 800;
-                min-width: 36px;
-                padding: 1px 4px;
+                padding: 1px 2px;
                 border-radius: 4px;
                 border: 1px solid transparent;
             }}
@@ -839,11 +840,12 @@ class FaceTrackerGUI(QWidget):
         cam_ctrl_card = QFrame()
         cam_ctrl_card.setProperty("class", "DashboardCard")
         cc_layout = QVBoxLayout(cam_ctrl_card)
-        cc_layout.setContentsMargins(14, 12, 14, 12)
-        cc_layout.setSpacing(10)
+        cc_layout.setContentsMargins(14, 8, 14, 8)
+        cc_layout.setSpacing(8)
         
         # 1행: 카메라 선택 (실제 하드웨어 명칭 노출) + 실시간 FPS 및 해상도 뱃지 (상단에서 이동)
         row1 = QHBoxLayout()
+        row1.setSpacing(10)
         cam_lbl = QLabel("카메라 선택:")
         cam_lbl.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 600;")
         
@@ -860,19 +862,18 @@ class FaceTrackerGUI(QWidget):
         row1.addWidget(cam_lbl)
         row1.addWidget(self.cam_combo, 1)
         
-        # 상단 프리뷰에서 아래로 옮겨온 실시간 FPS 및 해상도 뱃지 (카메라 선택 콤보박스와 동일한 높이로 정렬)
+        # 상단 프리뷰에서 아래로 옮겨온 실시간 FPS 및 해상도 뱃지 (가로 148px, 세로 32px로 완전 고정하여 숫자 변동 시 떨림 방지)
         self.cam_fps_lbl = QLabel("FPS: 0 | 640×480")
-        self.cam_fps_lbl.setFixedHeight(32)
+        self.cam_fps_lbl.setFixedSize(148, 32)
         self.cam_fps_lbl.setStyleSheet("""
             QLabel {
                 color: #38BDF8;
                 background-color: #0F172A;
                 border: 1.5px solid rgba(56, 189, 248, 0.45);
                 border-radius: 6px;
-                padding: 0px 14px;
+                padding: 0px 8px;
                 font-size: 12px;
                 font-weight: 800;
-                margin-left: 10px;
             }
         """)
         self.cam_fps_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1060,11 +1061,18 @@ class FaceTrackerGUI(QWidget):
         mc_layout.addWidget(mc_title)
         
         grid = QGridLayout()
-        grid.setHorizontalSpacing(18)
-        grid.setVerticalSpacing(14)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(12)
+        grid.setColumnStretch(0, 0)  # 좌측 라벨
+        grid.setColumnStretch(1, 0)  # 좌측 숫자 뱃지 (54px 고정)
+        grid.setColumnStretch(2, 1)  # 좌측 슬라이더 (남은 가로 공간 최대 확장)
+        grid.setColumnStretch(3, 0)  # 우측 라벨
+        grid.setColumnStretch(4, 0)  # 우측 숫자 뱃지 (54px 고정)
+        grid.setColumnStretch(5, 1)  # 우측 슬라이더 (남은 가로 공간 최대 확장)
         
         def make_field_lbl(text, tooltip=None):
             lbl = QLabel(text)
+            lbl.setFixedWidth(70)
             lbl.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 600;")
             if tooltip:
                 lbl.setToolTip(tooltip)
